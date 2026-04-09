@@ -1,0 +1,75 @@
+"""
+GoliTransit Backend — Configuration Loader
+============================================
+Reads config.json from the project root and exposes typed settings
+to the rest of the backend.
+
+Integration:
+  - Used by main.py for CORS origins and server config
+  - Used by graph_service.py for OSM download parameters
+  - Used by routing_engine.py for vehicle types and penalties
+  - Used by anomaly_service.py for severity thresholds
+  - Used by ml_integration.py for the prediction server URL
+"""
+
+import json
+import os
+from dataclasses import dataclass, field
+from typing import Any
+
+
+# ─── Path to the global config file ──────────────────────────────
+CONFIG_PATH = os.environ.get("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
+
+
+def _load_config() -> dict:
+    """Load and parse the JSON config file."""
+    with open(CONFIG_PATH, "r") as f:
+        return json.load(f)
+
+
+_raw: dict = _load_config()
+
+
+@dataclass
+class Settings:
+    """
+    Typed settings object built from config.json.
+    Access nested values via attributes for autocomplete and safety.
+    """
+    # Server
+    backend_host: str = _raw.get("server", {}).get("backend_host", "0.0.0.0")
+    backend_port: int = _raw.get("server", {}).get("backend_port", 8000)
+    cors_origins: list[str] = field(default_factory=lambda: _raw.get("server", {}).get("cors_origins", ["*"]))
+
+    # Graph
+    osm_location: str = _raw.get("graph", {}).get("default_location", "San Francisco, California, USA")
+    network_type: str = _raw.get("graph", {}).get("network_type", "all")
+    simplify_graph: bool = _raw.get("graph", {}).get("simplify", True)
+
+    # Vehicle types (dict of dicts)
+    vehicle_types: dict[str, Any] = field(default_factory=lambda: _raw.get("vehicle_types", {}))
+
+    # Mode-switch penalties
+    mode_switch_penalties: dict[str, Any] = field(default_factory=lambda: _raw.get("mode_switch_penalties", {}))
+
+    # Anomaly
+    anomaly_config: dict[str, Any] = field(default_factory=lambda: _raw.get("anomaly", {}))
+
+    # ML
+    ml_prediction_url: str = _raw.get("ml", {}).get("prediction_server_url", "http://localhost:8001/predict")
+    ml_fallback_to_default: bool = _raw.get("ml", {}).get("fallback_to_default", True)
+
+    # Routing
+    routing_algorithm: str = _raw.get("routing", {}).get("algorithm", "dijkstra")
+    weight_attribute: str = _raw.get("routing", {}).get("weight_attribute", "travel_time")
+    max_alternatives: int = _raw.get("routing", {}).get("max_alternatives", 3)
+    multimodal_max_transfers: int = _raw.get("routing", {}).get("multimodal_max_transfers", 3)
+    transfer_radius_meters: float = _raw.get("routing", {}).get("transfer_radius_meters", 500)
+
+    # Demo scenarios
+    demo_scenarios: dict[str, Any] = field(default_factory=lambda: _raw.get("demo_scenarios", {}))
+
+
+# Singleton settings instance — import this everywhere
+settings = Settings()

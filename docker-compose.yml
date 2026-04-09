@@ -1,0 +1,113 @@
+# ============================================================
+# GoliTransit — Docker Compose
+# ============================================================
+# Orchestrates all three services: backend, ml, frontend
+#
+# Usage:
+#   docker compose up              — Start all services (dev mode)
+#   docker compose up --build      — Rebuild images and start
+#   docker compose up -d           — Start detached
+#   docker compose logs -f backend — Follow backend logs
+#   docker compose down            — Stop and remove containers
+#
+# Production build (frontend via Nginx):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+# ============================================================
+
+version: "3.9"
+
+# ─── Shared Network ─────────────────────────────────────────
+networks:
+  golitransit-net:
+    driver: bridge
+    name: golitransit-net
+
+# ─── Named Volumes ──────────────────────────────────────────
+volumes:
+  ml-models:
+    driver: local
+  ml-data:
+    driver: local
+  osm-cache:
+    driver: local
+
+services:
+
+  # ─── FastAPI Backend ────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: golitransit-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.json:/app/config.json:ro     # Shared config (read-only)
+      - ./backend:/app                         # Live reload in dev
+      - osm-cache:/app/data/osm_cache          # Persist OSM cache
+    environment:
+      - CONFIG_PATH=/app/config.json
+      - ML_PREDICTION_URL=http://ml:8001/predict
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      ml:
+        condition: service_healthy
+    networks:
+      - golitransit-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ─── ML Prediction Service ─────────────────────────────────
+  ml:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: golitransit-ml
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./config.json:/app/config.json:ro     # Shared config (read-only)
+      - ./ml:/app                              # Live reload in dev
+      - ml-models:/app/models                  # Persist trained models
+      - ml-data:/app/data                      # Persist training data
+    environment:
+      - CONFIG_PATH=/app/config.json
+      - PYTHONUNBUFFERED=1
+    networks:
+      - golitransit-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    command: python predict.py
+
+  # ─── React Frontend (Vite dev server) ───────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: golitransit-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app                        # Live reload in dev
+      - /app/node_modules                      # Prevent host node_modules override
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - golitransit-net
+    command: npm run dev -- --host 0.0.0.0
