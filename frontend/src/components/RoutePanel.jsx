@@ -287,7 +287,7 @@ function RoutePanel({
                 fontSize: 10,
                 fontFamily: 'JetBrains Mono, monospace',
               }}>
-                Hour {String(routeResult.traffic_jam_prediction.hour_of_day).padStart(2, '0')}:00 |
+                Time {formatHourOfDay(routeResult.traffic_jam_prediction.hour_of_day)} |
                 Edges {routeResult.traffic_jam_prediction.edges_analyzed} |
                 Heavy {routeResult.traffic_jam_prediction.heavy_edges} |
                 Moderate {routeResult.traffic_jam_prediction.moderate_edges} |
@@ -436,6 +436,14 @@ function WaypointDisplay({ label, latlng, accentColor, emptyText }) {
       )}
     </div>
   );
+}
+
+function formatHourOfDay(hour) {
+  const h = Number.isFinite(hour) ? Number(hour) : 0;
+  const normalized = ((h % 24) + 24) % 24;
+  const hour12 = normalized % 12 === 0 ? 12 : normalized % 12;
+  const ampm = normalized < 12 ? 'AM' : 'PM';
+  return `${hour12}:00 ${ampm}`;
 }
 
 function LegCard({ leg, index, totalLegs }) {
