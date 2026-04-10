@@ -126,6 +126,7 @@ class GraphService:
             data["speed_limit_kmh"] = maxspeed_kmh
             data["travel_time"] = base_travel_time_s
             data["base_travel_time"] = base_travel_time_s
+            data["mode_travel_time_s"] = base_travel_time_s
             data["anomaly_multiplier"] = 1.0
             data["ml_predicted"] = False
 
@@ -137,6 +138,10 @@ class GraphService:
 
                 data[f"{mode}_allowed"] = mode_allowed
                 data[f"{mode}_travel_time"] = mode_time_s
+
+    def _annotate_graph_edges(self):
+        """Backward-compatible alias used by existing tests and callers."""
+        self._normalize_edge_attributes()
 
     def is_loaded(self) -> bool:
         return self._loaded

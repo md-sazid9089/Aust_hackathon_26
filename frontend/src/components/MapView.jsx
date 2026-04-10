@@ -127,22 +127,12 @@ function MapFABControls({ defaultCenter, defaultZoom }) {
   );
 }
 
-<<<<<<< HEAD
 // ─── Main MapView Component ───────────────────────────────────────
 
 function MapView({ origin, destination, routeResult, onMapClick, onOriginDrag, onDestinationDrag }) {
   // Default center: Dhaka, near Ahsanullah University of Science and Technology
   const defaultCenter = [23.7391, 90.3703];
   const defaultZoom = 14;
-=======
-
-// ─── Main MapView Component ───────────────────────────────────────
-
-function MapView({ origin, destination, routeResult, onMapClick }) {
-  // Default center: Dhaka, near Ahsanullah University of Science and Technology
-  const defaultCenter = [23.7391, 90.3703];
-  const defaultZoom = 14;
->>>>>>> dev
 
   const routeCoords =
     routeResult?.legs?.flatMap((leg) => leg.geometry?.map((point) => [point.lat, point.lng]) || []) || [];
