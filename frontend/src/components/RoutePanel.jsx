@@ -6,7 +6,10 @@
  *   - Metric row: distance | duration | cost
  *   - Vehicle recommendations section
  *   - Route step breakdown with road names
+ *   - Dual-route comparison cards for multimodal mode
  */
+
+import RouteComparisonCards from './RouteComparisonCards';
 
 const MODE_COLORS = {
   car:      '#3b82f6',
@@ -17,7 +20,19 @@ const MODE_COLORS = {
   rickshaw: '#f97316',
 };
 
-function RoutePanel({ origin, destination, routeResult, isLoading, error, onCompute, onComputeMultimodal, onClear }) {
+function RoutePanel({ 
+  origin, 
+  destination, 
+  routeResult, 
+  dualRoute, 
+  routeMode, 
+  isLoading, 
+  error, 
+  onCompute, 
+  onComputeMultimodal, 
+  onRouteModeChange,
+  onClear 
+}) {
   const hasPoints = origin && destination;
 
   return (
@@ -184,6 +199,15 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
         }}>
           {'\u26A0'} {error}
         </div>
+      )}
+
+      {/* Dual Route Comparison Cards (Multimodal Mode) */}
+      {routeMode === 'multimodal' && dualRoute && (dualRoute.min_time_route || dualRoute.min_distance_route) && (
+        <RouteComparisonCards
+          dualRoute={dualRoute}
+          routeMode={routeMode}
+          onRouteModeChange={onRouteModeChange}
+        />
       )}
 
       {/* Route result */}
