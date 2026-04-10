@@ -16,9 +16,9 @@
  */
 
 import { useState } from 'react';
-import { Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, Loader2, AlertCircle, ChevronLeft } from 'lucide-react';
 
-export default function LoginPage({ onNavigateToHome }) {
+export default function LoginPage({ onNavigateToHome, onNavigateToSignUp }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -90,30 +90,87 @@ export default function LoginPage({ onNavigateToHome }) {
   const isFormValid = validateEmail(email) && password.length >= 8;
 
   return (
-    <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center">
-      {/* ═══ BACKGROUND WITH OVERLAY ═══════════════════════════════ */}
-      <div
-        className="absolute inset-0 bg-cover bg-center bg-fixed"
-        style={{
-          backgroundImage: `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800"><rect fill="%230a0d14" width="1200" height="800"/><defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="%231e293b" stroke-width="0.5"/></pattern></defs><rect width="1200" height="800" fill="url(%23grid)"/><circle cx="200" cy="150" r="120" fill="%238b5cf6" opacity="0.1"/><circle cx="1000" cy="600" r="150" fill="%236366f1" opacity="0.08"/></svg>')`,
-        }}
-      />
-      
-      {/* Dark overlay */}
-      <div className="absolute inset-0 bg-black/50" />
-
-      {/* ═══ LOGIN FORM CONTAINER ════════════════════════════════ */}
-      <div className="relative z-10 w-full max-w-md px-6 py-8 animate-fade-in">
-        {/* Form Container */}
-        <div className="bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-slate-800">
-          
-          {/* Header */}
-          <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold text-white mb-2">GoliTransit</h1>
-            <p className="text-slate-400 text-sm">Multi-modal routing engine</p>
+    <div className="min-h-screen w-full relative overflow-hidden flex">
+      {/* ═══ LEFT SIDE — BACKGROUND IMAGE WITH OVERLAY ═══════════════ */}
+      <div className="hidden md:flex md:w-1/2 relative">
+        {/* Background Image */}
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{
+            backgroundImage: `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"><rect fill="%230a0d14" width="1000" height="1000"/><defs><filter id="blur"><feGaussianBlur in="SourceGraphic" stdDeviation="3" /></filter><pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="%231e293b" stroke-width="0.5"/></pattern><radialGradient id="grad" cx="40%" cy="40%"><stop offset="0%25" style="stop-color:%238b5cf6;stop-opacity:0.15" /><stop offset="100%25" style="stop-color:%236366f1;stop-opacity:0.05" /></radialGradient></defs><rect width="1000" height="1000" fill="url(%23grid)"/><rect width="1000" height="1000" fill="url(%23grad)"/><circle cx="300" cy="200" r="200" fill="%238b5cf6" opacity="0.12" filter="url(%23blur)"/><circle cx="700" cy="800" r="250" fill="%236366f1" opacity="0.10" filter="url(%23blur)"/><path d="M 0 400 Q 250 300 500 400 T 1000 400" stroke="%236366f1" stroke-width="1" fill="none" opacity="0.1"/></svg>')`,
+            backgroundAttachment: 'fixed',
+            filter: 'blur(2px)',
+          }}
+        />
+        
+        {/* Dark overlay on left */}
+        <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/40 to-black/0" />
+        
+        {/* Content on left side */}
+        <div className="relative z-10 flex flex-col justify-center items-start p-12 max-w-sm">
+          <div className="mb-8">
+            <h1 className="text-5xl font-bold text-white mb-4 leading-tight">
+              Welcome to <span className="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">GoliTransit</span>
+            </h1>
+            <p className="text-slate-300 text-lg mb-6">
+              Multi-modal hyper-local routing engine for seamless urban mobility
+            </p>
           </div>
+          
+          {/* Features list */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-purple-400" />
+              <span className="text-slate-300">Smart routing technology</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-indigo-400" />
+              <span className="text-slate-300">Real-time traffic insights</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-purple-400" />
+              <span className="text-slate-300">Sustainable commute options</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
-          {/* API Error Message */}
+      {/* ═══ RIGHT SIDE — LOGIN FORM ═══════════════════════════════ */}
+      <div className="w-full md:w-1/2 bg-slate-950/95 relative overflow-y-auto">
+        {/* Background pattern for right side */}
+        <div
+          className="absolute inset-0 opacity-10"
+          style={{
+            backgroundImage: `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="dots" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="10" cy="10" r="1" fill="%23ffffff"/></pattern></defs><rect width="100" height="100" fill="url(%23dots)"/></svg>')`,
+          }}
+        />
+
+        {/* Form Container */}
+        <div className="relative z-10 flex flex-col justify-center min-h-screen px-8 py-12 md:px-12 animate-fade-in">
+        
+        {/* Back Button */}
+        <button
+          onClick={() => onNavigateToHome && onNavigateToHome()}
+          className="mb-8 flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors group w-fit"
+          aria-label="Go back to home"
+        >
+          <ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+          <span className="text-sm font-medium">Back</span>
+        </button>
+
+        {/* Form Header */}
+        <div className="mb-8">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-gradient-to-br from-purple-600 to-indigo-600 mb-4">
+            <span className="text-xl font-bold text-white">⬡</span>
+          </div>
+          <h2 className="text-3xl font-bold text-white mb-2">Sign In</h2>
+          <p className="text-slate-400 text-sm">Access your GoliTransit routing dashboard</p>
+        </div>
+
+        {/* Horizontal line */}
+        <div className="w-20 h-1 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full mb-8" />
+
+        {/* API Error Message */}
           {apiError && (
             <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3 animate-slide-down">
               <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
@@ -122,7 +179,7 @@ export default function LoginPage({ onNavigateToHome }) {
           )}
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5 max-w-sm">
             
             {/* Email Input */}
             <div>
@@ -252,7 +309,7 @@ export default function LoginPage({ onNavigateToHome }) {
           </div>
 
           {/* Social Login Options */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-w-sm">
             {/* Google Button */}
             <button
               type="button"
@@ -284,21 +341,22 @@ export default function LoginPage({ onNavigateToHome }) {
           </div>
 
           {/* Sign Up Link */}
-          <p className="text-center text-sm text-slate-400 mt-6">
+          <p className="text-center text-sm text-slate-400 mt-6 max-w-sm">
             Don't have an account?{' '}
-            <a
-              href="#signup"
-              className="text-purple-400 hover:text-purple-300 font-medium transition-colors underline-offset-2 hover:underline"
+            <button
+              type="button"
+              onClick={() => onNavigateToSignUp && onNavigateToSignUp()}
+              className="text-purple-400 hover:text-purple-300 font-medium transition-colors underline-offset-2 hover:underline bg-none border-none p-0 cursor-pointer"
             >
               Sign up here
-            </a>
+            </button>
+          </p>
+
+          {/* Footer Note */}
+          <p className="text-center text-xs text-slate-500 mt-8">
+            This is a demo. For testing, use any email and password (min 8 chars).
           </p>
         </div>
-
-        {/* Footer Note */}
-        <p className="text-center text-xs text-slate-500 mt-6">
-          This is a demo. For testing, use any email and password (min 8 chars).
-        </p>
       </div>
 
       {/* ═══ TAILWIND ANIMATIONS (add to tailwind.config.js) ═════ */}
