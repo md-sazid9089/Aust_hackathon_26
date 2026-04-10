@@ -50,6 +50,12 @@ class RouteRequest(BaseModel):
         False,
         description="When true, include multimodal segment suggestions in response",
     )
+    traffic_hour_of_day: Optional[int] = Field(
+        None,
+        ge=0,
+        le=23,
+        description="Hour in user's local device time to evaluate traffic jam risk (0-23). If omitted, backend current hour is used.",
+    )
 
 
 class RouteLeg(BaseModel):
