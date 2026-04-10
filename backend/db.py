@@ -10,14 +10,14 @@ from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv
 
 # Load environment variables from .env
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-DB_USER = os.getenv('DB_USER')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
-DB_HOST = os.getenv('DB_HOST')
-DB_PORT = os.getenv('DB_PORT', '3306')
-DB_NAME = os.getenv('DB_NAME')
-DB_SSL_MODE = os.getenv('DB_SSL_MODE', 'require')
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT", "3306")
+DB_NAME = os.getenv("DB_NAME")
+DB_SSL_MODE = os.getenv("DB_SSL_MODE", "require")
 
 # SQLAlchemy connection string
 DATABASE_URL = (
@@ -26,6 +26,7 @@ DATABASE_URL = (
 )
 
 engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+
 
 def check_db_connection():
     try:

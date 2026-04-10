@@ -36,7 +36,5 @@ async def health_check():
             "nodes": graph_service.node_count() if graph_loaded else 0,
             "edges": graph_service.edge_count() if graph_loaded else 0,
         },
-        "database": {
-            "connected": db_connected
-        }
+        "database": {"connected": db_connected},
     }
