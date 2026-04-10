@@ -11,7 +11,10 @@ from typing import Callable
 import networkx as nx
 
 from config import settings
-from models.route_models import RouteRequest, RouteResponse, RouteLeg, ModeSwitch, LatLng
+from models.route_models import (
+    RouteRequest, RouteResponse, RouteLeg, ModeSwitch, LatLng,
+    VehicleOption, SegmentSuggestion, PathWithVehicleSuggestions
+)
 from services.graph_service import graph_service
 from services.ml_integration import ml_integration
 
@@ -53,6 +56,17 @@ class RoutingEngine:
         num_alts = request.max_alternatives or self._max_alts
         alternatives = await self._compute_alternatives(request, num_alts)
 
+        # Compute multimodal vehicle suggestions for single-modal routes
+        multimodal_suggestions = None
+        if len(request.modes) == 1:
+            try:
+                multimodal_suggestions = await self._compute_multimodal_suggestions(
+                    origin=request.origin,
+                    destination=request.destination,
+                )
+            except Exception as e:
+                print(f"[RoutingEngine] Multimodal suggestions failed: {e}")
+
         return RouteResponse(
             legs=legs,
             mode_switches=switches,
@@ -61,6 +75,7 @@ class RoutingEngine:
             total_cost=total_cost,
             anomalies_avoided=anomalies_avoided,
             alternatives=alternatives,
+            multimodal_suggestions=multimodal_suggestions,
         )
 
     async def _single_modal(
@@ -83,15 +98,63 @@ class RoutingEngine:
         if graph is None or graph.number_of_nodes() == 0:
             raise ValueError(f"No graph data available for mode '{mode}'.")
 
-        origin_node = graph_service.get_nearest_node(origin.lat, origin.lng)
-        dest_node = graph_service.get_nearest_node(destination.lat, destination.lng)
-        if origin_node is None or dest_node is None:
+        # Snap both clicks to nearby routable nodes; choose the best connected pair.
+        origin_candidates = graph_service.get_k_nearest_nodes_in_graph(graph, origin.lat, origin.lng, k=8)
+        dest_candidates = graph_service.get_k_nearest_nodes_in_graph(graph, destination.lat, destination.lng, k=8)
+
+        if not origin_candidates or not dest_candidates:
             raise ValueError("Could not snap origin/destination to graph.")
 
-        if origin_node not in graph or dest_node not in graph:
-            raise ValueError(f"No routable road nearby for mode '{mode}' at selected points.")
-
         weight_fn = self._build_weight_fn(mode, optimize)
+
+        best_pair = None
+        best_cost = float("inf")
+        for o_node in origin_candidates:
+            for d_node in dest_candidates:
+                if o_node == d_node:
+                    best_pair = (o_node, d_node)
+                    best_cost = 0.0
+                    break
+                try:
+                    cost = nx.shortest_path_length(
+                        graph,
+                        source=o_node,
+                        target=d_node,
+                        weight=weight_fn,
+                        method="dijkstra",
+                    )
+                except nx.NetworkXNoPath:
+                    continue
+
+                if cost < best_cost:
+                    best_cost = cost
+                    best_pair = (o_node, d_node)
+            if best_pair is not None and best_cost == 0.0:
+                break
+
+        if best_pair is None:
+            raise ValueError(f"No path found between origin and destination for mode '{mode}'.")
+
+        origin_node, dest_node = best_pair
+
+        if origin_node == dest_node:
+            node_data = graph.nodes.get(origin_node, {})
+            snapped = LatLng(
+                lat=float(node_data.get("y") or origin.lat),
+                lng=float(node_data.get("x") or origin.lng),
+            )
+            leg = RouteLeg(
+                mode=mode,
+                geometry=[snapped],
+                distance_m=0.0,
+                duration_s=0.0,
+                cost=0.0,
+                instructions=[
+                    f"Start near node {origin_node}",
+                    "You are already at the destination node.",
+                ],
+            )
+            return [leg], [], 0
 
         try:
             path = nx.shortest_path(graph, source=origin_node, target=dest_node, weight=weight_fn, method="dijkstra")
@@ -250,6 +313,223 @@ class RoutingEngine:
     async def _compute_alternatives(self, request: RouteRequest, num_alternatives: int) -> list[list[RouteLeg]]:
         del request, num_alternatives
         return []
+
+    async def _compute_multimodal_suggestions(
+        self,
+        origin: LatLng,
+        destination: LatLng,
+    ) -> list[PathWithVehicleSuggestions]:
+        """
+        Compute two routes with vehicle suggestions:
+        1. Shortest distance route
+        2. Fastest time route (optimal vehicle per segment)
+        """
+        all_modes = list(settings.vehicle_types.keys())
+        full_graph = graph_service.get_full_graph()
+        
+        if full_graph is None or full_graph.number_of_nodes() == 0:
+            raise ValueError("Graph not loaded")
+
+        results: list[PathWithVehicleSuggestions] = []
+
+        # Get candidate nodes for origin and destination
+        origin_candidates = graph_service.get_k_nearest_nodes_in_graph(full_graph, origin.lat, origin.lng, k=8)
+        dest_candidates = graph_service.get_k_nearest_nodes_in_graph(full_graph, destination.lat, destination.lng, k=8)
+
+        if not origin_candidates or not dest_candidates:
+            raise ValueError("Could not snap origin/destination to graph")
+
+        # Try to find path using all available vehicles
+        best_path_by_dist = None
+        best_path_by_time = None
+        best_o_node = None
+        best_d_node = None
+
+        for o_node in origin_candidates:
+            for d_node in dest_candidates:
+                if o_node == d_node:
+                    best_path_by_dist = [o_node, d_node]
+                    best_path_by_time = [o_node, d_node]
+                    best_o_node = o_node
+                    best_d_node = d_node
+                    break
+
+                # Try to find path in full graph (agnostic to mode restrictions initially)
+                try:
+                    path = nx.shortest_path(
+                        full_graph,
+                        source=o_node,
+                        target=d_node,
+                        weight=lambda u, v, d: 1,  # Unweighted
+                        method="dijkstra",
+                    )
+                    if best_path_by_dist is None:
+                        best_o_node = o_node
+                        best_d_node = d_node
+                        best_path_by_dist = path
+                        best_path_by_time = path
+                except nx.NetworkXNoPath:
+                    continue
+
+            if best_path_by_dist is not None and best_path_by_time is not None:
+                break
+
+        if best_path_by_dist is None or best_path_by_time is None:
+            raise ValueError("No path found between origin and destination")
+
+        # Compute shortest distance path with vehicle suggestions
+        shortest_dist_path = await self._analyze_path_with_vehicles(
+            path=best_path_by_dist,
+            graph=full_graph,
+            all_modes=all_modes,
+            route_type="shortest_distance",
+            optimize="distance",
+        )
+        results.append(shortest_dist_path)
+
+        # Compute fastest time path with vehicle suggestions
+        fastest_time_path = await self._analyze_path_with_vehicles(
+            path=best_path_by_time,
+            graph=full_graph,
+            all_modes=all_modes,
+            route_type="fastest_time",
+            optimize="time",
+        )
+        results.append(fastest_time_path)
+
+        return results
+
+    async def _analyze_path_with_vehicles(
+        self,
+        path: list,
+        graph: nx.MultiDiGraph,
+        all_modes: list[str],
+        route_type: str,
+        optimize: str,
+    ) -> PathWithVehicleSuggestions:
+        """
+        Analyze a path and compute vehicle suggestions for each segment.
+        Returns a PathWithVehicleSuggestions object with vehicle options per edge.
+        """
+        segments: list[SegmentSuggestion] = []
+        geometry: list[LatLng] = []
+        total_distance_m = 0.0
+        total_duration_s = 0.0
+
+        # Process each edge in the path
+        for seg_idx in range(len(path) - 1):
+            u = path[seg_idx]
+            v = path[seg_idx + 1]
+            edge_data_multi = graph.get_edge_data(u, v) or {}
+
+            if not edge_data_multi:
+                continue
+
+            # Use the best available edge key (if multiple parallel edges)
+            best_edge_data = next(iter(edge_data_multi.values()))
+            distance_m = float(best_edge_data.get("length") or 0.0)
+            road_type = best_edge_data.get("highway")
+
+            # Collect vehicle options for this segment
+            vehicle_options: list[VehicleOption] = []
+            best_vehicle = None
+            best_time = float("inf")
+
+            for mode in all_modes:
+                # Check if this vehicle is allowed on this road type
+                allowed_types = settings.vehicle_types.get(mode, {}).get("allowed_road_types", [])
+                if road_type not in allowed_types:
+                    continue
+
+                # Calculate travel time for this vehicle
+                travel_time_attr = f"{mode}_travel_time"
+                vehicle_travel_time = float(best_edge_data.get(travel_time_attr) or best_edge_data.get("travel_time") or 0.0)
+
+                if vehicle_travel_time == 0.0:
+                    # Fall back to calculating from speed
+                    default_speed_kmh = settings.vehicle_types.get(mode, {}).get("default_speed_kmh", 10)
+                    speed_ms = default_speed_kmh / 3.6
+                    vehicle_travel_time = distance_m / speed_ms if speed_ms > 0 else distance_m / 2.778  # ~10 kmh default
+
+                vehicle_options.append(
+                    VehicleOption(
+                        vehicle=mode,
+                        travel_time_s=vehicle_travel_time,
+                        distance_m=distance_m,
+                        is_recommended=False,
+                    )
+                )
+
+                if vehicle_travel_time < best_time:
+                    best_time = vehicle_travel_time
+                    best_vehicle = mode
+
+            # Set recommended vehicle
+            for opt in vehicle_options:
+                if opt.vehicle == best_vehicle:
+                    opt.is_recommended = True
+
+            if not vehicle_options and road_type:
+                # If no vehicle is allowed, log it but try to add a fallback
+                print(f"[Warning] No vehicles allowed on road type '{road_type}'")
+                for mode in all_modes:
+                    default_speed_kmh = settings.vehicle_types.get(mode, {}).get("default_speed_kmh", 10)
+                    speed_ms = default_speed_kmh / 3.6
+                    vehicle_travel_time = distance_m / speed_ms if speed_ms > 0 else distance_m / 2.778
+                    vehicle_options.append(
+                        VehicleOption(
+                            vehicle=mode,
+                            travel_time_s=vehicle_travel_time,
+                            distance_m=distance_m,
+                            is_recommended=(mode == "walk"),  # Default to walk if no info
+                        )
+                    )
+                    best_vehicle = "walk"
+
+            # Sort vehicle options by travel time
+            vehicle_options.sort(key=lambda x: x.travel_time_s)
+
+            recommended_vehicle = best_vehicle or (vehicle_options[0].vehicle if vehicle_options else "car")
+
+            # Add segment suggestion
+            segment = SegmentSuggestion(
+                segment_index=seg_idx,
+                from_node=str(u),
+                to_node=str(v),
+                distance_m=distance_m,
+                road_type=road_type,
+                vehicle_options=vehicle_options,
+                recommended_vehicle=recommended_vehicle,
+            )
+            segments.append(segment)
+
+            # Accumulate geometry
+            edge_points = self._edge_geometry_points(graph, u, v, best_edge_data)
+            if geometry and edge_points:
+                if geometry[-1].lat == edge_points[0].lat and geometry[-1].lng == edge_points[0].lng:
+                    geometry.extend(edge_points[1:])
+                else:
+                    geometry.extend(edge_points)
+            else:
+                geometry.extend(edge_points)
+
+            total_distance_m += distance_m
+            if best_vehicle:
+                for opt in vehicle_options:
+                    if opt.vehicle == best_vehicle:
+                        total_duration_s += opt.travel_time_s
+                        break
+
+        if len(geometry) < 2:
+            geometry = [LatLng(lat=path[0] if isinstance(path[0], float) else 0, lng=path[1] if isinstance(path[1], float) else 0)]
+
+        return PathWithVehicleSuggestions(
+            route_type=route_type,
+            total_distance_m=total_distance_m,
+            total_duration_s=total_duration_s,
+            geometry=geometry,
+            segments=segments,
+        )
 
     async def _refresh_ml_weights(self):
         try:
