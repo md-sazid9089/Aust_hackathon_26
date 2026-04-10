@@ -194,6 +194,49 @@ class GraphService:
 
         return best_node
 
+    def get_nearest_node_in_graph(self, graph: nx.MultiDiGraph, lat: float, lng: float):
+        """Find nearest node in a specific graph (e.g., a mode-filtered subgraph)."""
+        if graph is None or graph.number_of_nodes() == 0:
+            return None
+
+        best_node = None
+        best_dist_sq = float("inf")
+
+        for node_id, node_data in graph.nodes(data=True):
+            y = node_data.get("y")
+            x = node_data.get("x")
+            if y is None or x is None:
+                continue
+
+            d_lat = float(y) - lat
+            d_lng = float(x) - lng
+            dist_sq = d_lat * d_lat + d_lng * d_lng
+            if dist_sq < best_dist_sq:
+                best_dist_sq = dist_sq
+                best_node = node_id
+
+        return best_node
+
+    def get_k_nearest_nodes_in_graph(self, graph: nx.MultiDiGraph, lat: float, lng: float, k: int = 8):
+        """Return up to k nearest nodes in a specific graph ordered by distance."""
+        if graph is None or graph.number_of_nodes() == 0 or k <= 0:
+            return []
+
+        distances = []
+        for node_id, node_data in graph.nodes(data=True):
+            y = node_data.get("y")
+            x = node_data.get("x")
+            if y is None or x is None:
+                continue
+
+            d_lat = float(y) - lat
+            d_lng = float(x) - lng
+            dist_sq = d_lat * d_lat + d_lng * d_lng
+            distances.append((dist_sq, node_id))
+
+        distances.sort(key=lambda item: item[0])
+        return [node_id for _, node_id in distances[:k]]
+
     def get_subgraph_for_mode(self, mode: str):
         if not self._graph:
             return None
@@ -209,6 +252,12 @@ class GraphService:
             return nx.MultiDiGraph()
 
         return self._graph.edge_subgraph(edges).copy()
+
+    def get_full_graph(self):
+        """Return the complete loaded graph without any mode filtering."""
+        if not self._graph:
+            return None
+        return self._graph
 
     def update_edge_weight(self, source: str, target: str, multiplier: float):
         if not self._graph:
