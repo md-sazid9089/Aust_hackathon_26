@@ -15,12 +15,13 @@
  *   - Calls routeService to compute routes via backend API
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import MapView from '../components/MapView';
 import RoutePanel from '../components/RoutePanel';
 import ModeSelector from '../components/ModeSelector';
 import AnomalyAlert from '../components/AnomalyAlert';
 import { computeRoute } from '../services/routeService';
+import { getGraphSnapshot } from '../services/api';
 
 /* ─── HUD token shortcuts ──────────────────────────────────────── */
 const HUD = {
@@ -43,9 +44,28 @@ function MapPage({ apiStatus }) {
   const [routeResult, setRouteResult] = useState(null);   // API response
   const [isLoading, setIsLoading]     = useState(false);
   const [error, setError]             = useState(null);
+  const [graphNodes, setGraphNodes]   = useState([]);
 
   // Anomaly state
   const [anomalies, setAnomalies] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadGraphNodes = async () => {
+      try {
+        const snapshot = await getGraphSnapshot(false);
+        if (isMounted) {
+          setGraphNodes(Array.isArray(snapshot?.nodes) ? snapshot.nodes : []);
+        }
+      } catch (err) {
+        console.error('Failed to load graph nodes:', err);
+      }
+    };
+
+    loadGraphNodes();
+    return () => { isMounted = false; };
+  }, []);
 
   // ─── Handle map clicks to set origin/destination ──────────
   const handleMapClick = (latlng) => {
@@ -117,6 +137,7 @@ function MapPage({ apiStatus }) {
           origin={origin}
           destination={destination}
           routeResult={routeResult}
+          graphNodes={graphNodes}
           onMapClick={handleMapClick}
         />
       </div>
