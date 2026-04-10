@@ -1,25 +1,19 @@
 /*
- * RoutePanel — Route Input & Results Sidebar
+ * RoutePanel — Route Input & Results HUD Card
  * =============================================
- * Displays:
- *   - Origin/destination coordinates (set by map clicks)
- *   - "Compute Route" button
- *   - Computed route details (legs, duration, distance, cost)
- *   - Mode switch information for multi-modal routes
- *   - Error messages
- *
- * Integration:
- *   - Receives state from MapPage (origin, destination, result, error)
- *   - Triggers route computation via onCompute callback
- *   - Route result matches backend RouteResponse schema
+ * Matches the design spec with:
+ *   - Mode icon + name + LEG badge header
+ *   - Metric row: distance | duration | cost
+ *   - Vehicle recommendations section
+ *   - Route step breakdown with road names
  */
 
 const MODE_COLORS = {
-  car:     '#22c55e',
-  bike:    '#34d399',
-  walk:    '#f59e0b',
-  transit: '#8b5cf6',
-  rickshaw:'#ec4899',
+  car:      '#22c55e',
+  bike:     '#34d399',
+  walk:     '#f59e0b',
+  transit:  '#8b5cf6',
+  rickshaw: '#ec4899',
 };
 
 function RoutePanel({ origin, destination, routeResult, isLoading, error, onCompute, onClear }) {
@@ -28,250 +22,169 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-      {/* ── Section header ── */}
+      {/* Section header */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
+        gap: 10,
         paddingBottom: 12,
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
         <div style={{
           width: 28, height: 28,
-          borderRadius: 8,
-          background: 'linear-gradient(135deg, #22c55e22, #22c55e10)',
+          borderRadius: 9,
+          background: 'linear-gradient(135deg, rgba(34,197,94,0.20), rgba(34,197,94,0.06))',
           border: '1px solid rgba(34,197,94,0.25)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 13,
         }}>
-          🗺
+          {'\u{1F5FA}'}
         </div>
         <div>
           <div style={{
-            fontSize: 14, fontWeight: 800,
-            color: '#ffffff',
+            fontSize: 14, fontWeight: 800, color: '#fff',
             letterSpacing: '-0.01em',
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: 'Inter, system-ui, sans-serif',
           }}>
             Route Planner
           </div>
           <div style={{
-            fontSize: 10, color: '#525252',
+            fontSize: 9, color: '#525252',
             fontFamily: 'JetBrains Mono, monospace',
             fontWeight: 600,
             textTransform: 'uppercase',
-            letterSpacing: '0.06em',
+            letterSpacing: '0.08em',
           }}>
             {!origin ? 'Set origin on map' : !destination ? 'Set destination on map' : 'Ready to compute'}
           </div>
         </div>
       </div>
 
-      {/* ── Waypoints ── */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <WaypointDisplay
-          label="Origin"
-          latlng={origin}
-          accentColor="#22c55e"
-          emptyText="Tap map to set origin"
-        />
-        <WaypointDisplay
-          label="Destination"
-          latlng={destination}
-          accentColor="#8b5cf6"
-          emptyText="Tap map to set destination"
-        />
+      {/* Waypoints */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <WaypointDisplay label="Origin" latlng={origin} accentColor="#22c55e" emptyText="Tap map to set origin" />
+        <WaypointDisplay label="Destination" latlng={destination} accentColor="#8b5cf6" emptyText="Tap map to set destination" />
       </div>
 
-      {/* ── Action buttons ── */}
-      <div style={{ display: 'flex', gap: 8, paddingTop: 0 }}>
+      {/* Action buttons */}
+      <div style={{ display: 'flex', gap: 8 }}>
         <button
           id="btn-compute-route"
           onClick={onCompute}
           disabled={!hasPoints || isLoading}
           style={{
             flex: 1,
-            padding: '14px 0',
+            padding: '12px 0',
             borderRadius: 14,
             border: 'none',
             cursor: (!hasPoints || isLoading) ? 'not-allowed' : 'pointer',
             fontWeight: 800,
-            fontSize: 15,
-            fontFamily: 'Inter, sans-serif',
+            fontSize: 13,
+            fontFamily: 'Inter, system-ui, sans-serif',
             letterSpacing: '-0.01em',
             background: (!hasPoints || isLoading)
-              ? '#1e1e20'
+              ? 'rgba(255,255,255,0.04)'
               : 'linear-gradient(135deg, #16a34a, #22c55e)',
             color: (!hasPoints || isLoading) ? '#404040' : '#0a0a0a',
             boxShadow: (!hasPoints || isLoading)
               ? 'none'
-              : '0 8px 24px rgba(34,197,94,0.40), inset 0 1px 0 rgba(255,255,255,0.15)',
-            transition: 'all 0.18s ease',
+              : '0 8px 24px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.15)',
+            transition: 'all 0.2s ease',
           }}
           onMouseEnter={e => {
             if (hasPoints && !isLoading) {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 12px 32px rgba(34,197,94,0.55), inset 0 1px 0 rgba(255,255,255,0.15)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+              e.currentTarget.style.boxShadow = '0 12px 32px rgba(34,197,94,0.50), inset 0 1px 0 rgba(255,255,255,0.15)';
             }
           }}
           onMouseLeave={e => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = (!hasPoints || isLoading)
-              ? 'none'
-              : '0 8px 24px rgba(34,197,94,0.40), inset 0 1px 0 rgba(255,255,255,0.15)';
+            e.currentTarget.style.transform = 'none';
+            e.currentTarget.style.boxShadow = (!hasPoints || isLoading) ? 'none'
+              : '0 8px 24px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.15)';
           }}
         >
           {isLoading ? (
-            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9 }}>
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               <span style={{
-                width: 15, height: 15,
+                width: 14, height: 14,
                 border: '2.5px solid rgba(10,10,10,0.25)',
                 borderTopColor: '#0a0a0a',
                 borderRadius: '50%',
                 display: 'inline-block',
                 animation: 'spin 0.7s linear infinite',
               }} />
-              Computing…
+              Computing...
             </span>
-          ) : 'Compute Route →'}
+          ) : 'Compute Route'}
         </button>
 
         <button
           id="btn-clear-route"
           onClick={onClear}
           style={{
-            padding: '14px 16px',
+            padding: '12px 16px',
             borderRadius: 14,
-            border: '1.5px solid rgba(255,255,255,0.10)',
+            border: '1.5px solid rgba(255,255,255,0.08)',
             background: 'transparent',
-            color: '#737373',
+            color: '#525252',
             fontWeight: 700,
-            fontSize: 13,
-            fontFamily: 'Inter, sans-serif',
+            fontSize: 12,
+            fontFamily: 'Inter, system-ui, sans-serif',
             cursor: 'pointer',
-            transition: 'all 0.18s ease',
+            transition: 'all 0.15s ease',
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.background = '#1e1e20';
-            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.20)';
-            e.currentTarget.style.color = '#ffffff';
+            e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+            e.currentTarget.style.color = '#fff';
           }}
           onMouseLeave={e => {
             e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.10)';
-            e.currentTarget.style.color = '#737373';
+            e.currentTarget.style.color = '#525252';
           }}
         >
           Clear
         </button>
       </div>
 
-      {/* ── Error ── */}
+      {/* Error */}
       {error && (
-        <div
-          className="animate-slide-up"
-          style={{
-            padding: '11px 14px',
-            background: 'rgba(239,68,68,0.08)',
-            border: '1px solid rgba(239,68,68,0.22)',
-            borderRadius: 12,
-            fontSize: 12,
-            fontWeight: 600,
-            color: '#f87171',
-            lineHeight: 1.55,
-            fontFamily: 'Inter, sans-serif',
-          }}
-        >
-          <span style={{ marginRight: 7 }}>⚠</span>{error}
+        <div className="animate-slide-up" style={{
+          padding: '10px 14px',
+          background: 'rgba(239,68,68,0.07)',
+          border: '1px solid rgba(239,68,68,0.20)',
+          borderRadius: 12,
+          fontSize: 11,
+          fontWeight: 600,
+          color: '#f87171',
+          lineHeight: 1.5,
+          fontFamily: 'Inter, system-ui, sans-serif',
+        }}>
+          {'\u26A0'} {error}
         </div>
       )}
 
-      {/* ── Route result ── */}
+      {/* Route result */}
       {routeResult && (
         <div className="animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-
-          {/* Summary metrics */}
-          <div style={{
-            background: '#111113',
-            border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: 14,
-            overflow: 'hidden',
-          }}>
-            <div style={{
-              padding: '8px 12px 4px',
-              fontSize: 9,
-              fontWeight: 800,
-              textTransform: 'uppercase',
-              letterSpacing: '0.14em',
-              color: '#525252',
-              fontFamily: 'JetBrains Mono, monospace',
-            }}>
-              Route Summary
-            </div>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              borderTop: '1px solid rgba(255,255,255,0.04)',
-            }}>
-              <MetricCell
-                value={formatDistance(routeResult.total_distance_m)}
-                label="Distance"
-                accent="#22c55e"
-                borderRight
-              />
-              <MetricCell
-                value={formatDuration(routeResult.total_duration_s)}
-                label="Duration"
-                accent="#ffffff"
-                borderRight
-              />
-              <MetricCell
-                value={`$${routeResult.total_cost.toFixed(2)}`}
-                label="Cost"
-                accent="#f59e0b"
-              />
-            </div>
-          </div>
-
-          {/* Legs */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{
-              fontSize: 9, fontWeight: 800,
-              textTransform: 'uppercase', letterSpacing: '0.14em',
-              color: '#525252',
-              fontFamily: 'JetBrains Mono, monospace',
-              paddingLeft: 2,
-            }}>
-              Route Legs
-            </div>
-            {routeResult.legs.map((leg, idx) => (
-              <LegCard key={idx} leg={leg} index={idx} />
-            ))}
-          </div>
+          {routeResult.legs.map((leg, idx) => (
+            <LegCard key={idx} leg={leg} index={idx} totalLegs={routeResult.legs.length} />
+          ))}
 
           {/* Mode switches */}
           {routeResult.mode_switches?.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <div style={{
-                fontSize: 9, fontWeight: 800,
-                textTransform: 'uppercase', letterSpacing: '0.14em',
-                color: '#525252',
-                fontFamily: 'JetBrains Mono, monospace',
-                paddingLeft: 2,
-              }}>
-                Mode Transfers
-              </div>
+              <SectionLabel text="Mode Transfers" />
               {routeResult.mode_switches.map((sw, idx) => (
                 <div key={idx} style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '8px 12px',
-                  background: '#111113',
+                  background: 'rgba(0,0,0,0.25)',
                   border: '1px solid rgba(255,255,255,0.05)',
                   borderRadius: 10,
                 }}>
-                  <span style={{ fontSize: 14 }}>{getModeEmoji(sw.from_mode)}</span>
-                  <span style={{ color: '#404040', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>→</span>
-                  <span style={{ fontSize: 14 }}>{getModeEmoji(sw.to_mode)}</span>
+                  <span style={{ fontSize: 15 }}>{getModeEmoji(sw.from_mode)}</span>
+                  <span style={{ color: '#333', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{'\u2192'}</span>
+                  <span style={{ fontSize: 15 }}>{getModeEmoji(sw.to_mode)}</span>
                   <span style={{
                     marginLeft: 'auto',
                     color: '#f59e0b',
@@ -288,17 +201,17 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
           {/* Anomalies avoided */}
           {routeResult.anomalies_avoided > 0 && (
             <div style={{
-              padding: '9px 14px',
-              background: 'rgba(245,158,11,0.07)',
-              border: '1px solid rgba(245,158,11,0.22)',
-              borderRadius: 10, fontSize: 12,
+              padding: '10px 14px',
+              background: 'rgba(245,158,11,0.06)',
+              border: '1px solid rgba(245,158,11,0.18)',
+              borderRadius: 10,
+              fontSize: 12,
               fontWeight: 600,
               color: '#f59e0b',
               display: 'flex', alignItems: 'center', gap: 8,
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: 'Inter, system-ui, sans-serif',
             }}>
-              <span>⚠</span>
-              Avoided {routeResult.anomalies_avoided} anomaly-affected edge(s)
+              {'\u26A0'} Avoided {routeResult.anomalies_avoided} anomaly-affected edge(s)
             </div>
           )}
         </div>
@@ -310,73 +223,53 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
 }
 
 
-// ─── Sub-Components ───────────────────────────────────────────────
+// --- Sub-Components ---
 
 function WaypointDisplay({ label, latlng, accentColor, emptyText }) {
-  const coordText = latlng
-    ? `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`
-    : null;
-
+  const coordText = latlng ? `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}` : null;
   return (
     <div style={{
       display: 'flex',
       alignItems: 'center',
-      gap: 10,
-      padding: '11px 14px',
-      background: latlng ? '#1a1a1c' : '#141416',
-      border: latlng
-        ? `1px solid ${accentColor}28`
-        : '1px solid rgba(255,255,255,0.06)',
+      gap: 8,
+      padding: '8px 12px',
+      background: latlng ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.15)',
+      border: latlng ? `1px solid ${accentColor}22` : '1px solid rgba(255,255,255,0.04)',
       borderRadius: 12,
       transition: 'all 0.2s ease',
     }}>
-      {/* Dot */}
       <div style={{
         width: 9, height: 9,
         borderRadius: '50%',
         flexShrink: 0,
         background: latlng ? accentColor : '#2e2e30',
-        boxShadow: latlng ? `0 0 10px ${accentColor}70` : 'none',
+        boxShadow: latlng ? `0 0 10px ${accentColor}60` : 'none',
         transition: 'all 0.2s ease',
       }} />
-
-      {/* Label */}
       <span style={{
-        fontSize: 10,
-        fontWeight: 800,
+        fontSize: 9, fontWeight: 800,
         textTransform: 'uppercase',
         letterSpacing: '0.10em',
-        color: latlng ? accentColor : '#404040',
+        color: latlng ? accentColor : '#333',
         fontFamily: 'JetBrains Mono, monospace',
-        width: 72,
-        flexShrink: 0,
-        transition: 'color 0.2s ease',
+        width: 60, flexShrink: 0,
       }}>
         {label}
       </span>
-
-      {/* Coordinate / placeholder */}
       {latlng ? (
         <span style={{
           color: '#a3a3a3',
           fontFamily: 'JetBrains Mono, monospace',
-          fontSize: 11,
-          fontWeight: 500,
-          overflow: 'hidden',
-          whiteSpace: 'nowrap',
-          textOverflow: 'ellipsis',
-          flex: 1,
-          minWidth: 0,
+          fontSize: 10, fontWeight: 500,
+          overflow: 'hidden', whiteSpace: 'nowrap',
+          textOverflow: 'ellipsis', flex: 1, minWidth: 0,
         }}>
           {coordText}
         </span>
       ) : (
         <span style={{
-          color: '#404040',
-          fontSize: 12,
-          fontWeight: 500,
-          fontStyle: 'italic',
-          fontFamily: 'Inter, sans-serif',
+          color: '#333', fontSize: 12, fontWeight: 500,
+          fontStyle: 'italic', fontFamily: 'Inter, system-ui, sans-serif',
         }}>
           {emptyText}
         </span>
@@ -385,10 +278,189 @@ function WaypointDisplay({ label, latlng, accentColor, emptyText }) {
   );
 }
 
+function LegCard({ leg, index, totalLegs }) {
+  const accent = MODE_COLORS[leg.mode] || '#22c55e';
+  return (
+    <div style={{
+      background: 'rgba(0,0,0,0.25)',
+      border: '1px solid rgba(255,255,255,0.05)',
+      borderRadius: 16,
+      padding: '14px 14px 14px 18px',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      {/* Left accent stripe */}
+      <div style={{
+        position: 'absolute', left: 0, top: 6, bottom: 6, width: 3,
+        background: accent, borderRadius: 99,
+        boxShadow: `0 0 10px ${accent}60`,
+      }} />
+
+      {/* Header: mode + leg badge */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+      }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 18 }}>{getModeEmoji(leg.mode)}</span>
+          <span style={{
+            textTransform: 'capitalize',
+            color: accent,
+            fontSize: 15,
+            fontWeight: 800,
+            fontFamily: 'Inter, system-ui, sans-serif',
+            letterSpacing: '-0.01em',
+          }}>
+            {leg.mode}
+          </span>
+        </span>
+        <span style={{
+          fontSize: 9, color: '#525252',
+          fontFamily: 'JetBrains Mono, monospace',
+          fontWeight: 700,
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          borderRadius: 6,
+          padding: '3px 10px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+        }}>
+          Leg {index + 1}
+        </span>
+      </div>
+
+      {/* Metric row */}
+      <div style={{
+        display: 'flex',
+        gap: 14,
+        fontSize: 13,
+        fontWeight: 600,
+        fontFamily: 'JetBrains Mono, monospace',
+        marginBottom: 12,
+        paddingBottom: 10,
+        borderBottom: '1px solid rgba(255,255,255,0.04)',
+      }}>
+        <span style={{ color: '#a3a3a3' }}>{formatDistance(leg.distance_m)}</span>
+        <span style={{ color: '#a3a3a3' }}>{formatDuration(leg.duration_s)}</span>
+        <span style={{ color: '#f59e0b', fontWeight: 700 }}>${leg.cost.toFixed(2)}</span>
+      </div>
+
+      {/* Vehicle recommendations */}
+      <SectionLabel text="Vehicle Recommendations" icon={'\u2728'} />
+
+      <div style={{
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(255,255,255,0.04)',
+        borderRadius: 12,
+        padding: '10px 12px',
+        marginTop: 6,
+      }}>
+        {/* Shortest distance row */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 8,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 13 }}>{'\u26A1'}</span>
+            <span style={{
+              fontSize: 12, fontWeight: 800, color: '#fff',
+              fontFamily: 'Inter, system-ui, sans-serif',
+            }}>
+              Shortest Distance
+            </span>
+          </div>
+          <div style={{
+            display: 'flex', gap: 8,
+            fontSize: 10, color: '#737373',
+            fontFamily: 'JetBrains Mono, monospace', fontWeight: 600,
+          }}>
+            <span>{formatDistance(leg.distance_m)}</span>
+            <span>{formatDuration(leg.duration_s)}</span>
+          </div>
+        </div>
+
+        {/* Route instructions */}
+        {leg.instructions && leg.instructions.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {leg.instructions.map((instr, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '5px 8px',
+                background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                borderRadius: 6,
+                fontSize: 10,
+                fontFamily: 'JetBrains Mono, monospace',
+                color: '#737373',
+              }}>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {instr}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Fastest label */}
+        <div style={{
+          marginTop: 8,
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '4px 10px',
+            background: `${accent}18`,
+            border: `1px solid ${accent}35`,
+            borderRadius: 999,
+            fontSize: 9, fontWeight: 800,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: accent,
+            fontFamily: 'JetBrains Mono, monospace',
+          }}>
+            Fastest: {leg.mode}
+          </span>
+          <span style={{
+            fontSize: 10, color: '#525252',
+            fontFamily: 'JetBrains Mono, monospace',
+          }}>
+            {formatDuration(leg.duration_s)}
+          </span>
+          <span style={{
+            marginLeft: 'auto',
+            color: '#22c55e',
+            fontSize: 13,
+          }}>
+            {'\u2714'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SectionLabel({ text, icon }) {
+  return (
+    <div style={{
+      fontSize: 9, fontWeight: 800,
+      textTransform: 'uppercase',
+      letterSpacing: '0.14em',
+      color: '#404040',
+      fontFamily: 'JetBrains Mono, monospace',
+      display: 'flex', alignItems: 'center', gap: 5,
+      paddingLeft: 2,
+    }}>
+      {icon && <span style={{ fontSize: 10 }}>{icon}</span>}
+      {text}
+    </div>
+  );
+}
+
 function MetricCell({ value, label, accent, borderRight }) {
   return (
     <div style={{
-      padding: '8px 10px 10px',
+      padding: '8px 8px 9px',
       textAlign: 'center',
       borderRight: borderRight ? '1px solid rgba(255,255,255,0.04)' : 'none',
     }}>
@@ -402,8 +474,7 @@ function MetricCell({ value, label, accent, borderRight }) {
         {value}
       </div>
       <div style={{
-        fontSize: 9,
-        color: '#525252',
+        fontSize: 9, color: '#525252',
         textTransform: 'uppercase',
         letterSpacing: '0.12em',
         fontWeight: 700,
@@ -415,82 +486,17 @@ function MetricCell({ value, label, accent, borderRight }) {
   );
 }
 
-function LegCard({ leg, index }) {
-  const accent = MODE_COLORS[leg.mode] || '#22c55e';
-  return (
-    <div style={{
-      background: '#111113',
-      border: '1px solid rgba(255,255,255,0.05)',
-      borderRadius: 12,
-      padding: '8px 12px 8px 16px',
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
-      {/* Left accent stripe */}
-      <div style={{
-        position: 'absolute', left: 0, top: 4, bottom: 4, width: 3,
-        background: accent,
-        borderRadius: 99,
-        boxShadow: `0 0 8px ${accent}70`,
-      }} />
 
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 4,
-      }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ fontSize: 15 }}>{getModeEmoji(leg.mode)}</span>
-          <span style={{
-            textTransform: 'capitalize',
-            color: accent,
-            fontSize: 12,
-            fontWeight: 800,
-            fontFamily: 'Inter, sans-serif',
-          }}>
-            {leg.mode}
-          </span>
-        </span>
-        <span style={{
-          fontSize: 9,
-          color: '#525252',
-          fontFamily: 'JetBrains Mono, monospace',
-          fontWeight: 700,
-          background: '#1e1e20',
-          border: '1px solid rgba(255,255,255,0.06)',
-          borderRadius: 6,
-          padding: '2px 8px',
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-        }}>
-          Leg {index + 1}
-        </span>
-      </div>
-
-      <div style={{
-        display: 'flex',
-        gap: 10,
-        fontSize: 10,
-        fontWeight: 600,
-        color: '#737373',
-        fontFamily: 'JetBrains Mono, monospace',
-      }}>
-        <span>{formatDistance(leg.distance_m)}</span>
-        <span style={{ color: '#2a2a2c' }}>|</span>
-        <span>{formatDuration(leg.duration_s)}</span>
-        <span style={{ color: '#2a2a2c' }}>|</span>
-        <span style={{ color: '#f59e0b' }}>${leg.cost.toFixed(2)}</span>
-      </div>
-    </div>
-  );
-}
-
-
-// ─── Helpers ──────────────────────────────────────────────────────
+// --- Helpers ---
 
 function getModeEmoji(mode) {
-  return ({ car: '🚗', bike: '🚲', walk: '🚶', transit: '🚌', rickshaw: '🛺' })[mode] || '📍';
+  return ({
+    car: '\u{1F697}',
+    bike: '\u{1F6B2}',
+    walk: '\u{1F6B6}',
+    transit: '\u{1F68C}',
+    rickshaw: '\u{1F6FA}',
+  })[mode] || '\u{1F4CD}';
 }
 
 function formatDistance(meters) {
