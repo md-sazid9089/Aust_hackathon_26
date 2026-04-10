@@ -3,12 +3,13 @@
  * ==============================================
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import MapView from '../components/MapView';
 import RoutePanel from '../components/RoutePanel';
 import ModeSelector from '../components/ModeSelector';
 import AnomalyAlert from '../components/AnomalyAlert';
 import { computeRoute } from '../services/routeService';
+import { getGraphSnapshot } from '../services/api';
 
 const HUD = {
   green: '#22c55e',
@@ -17,15 +18,38 @@ const HUD = {
   border: 'rgba(255,255,255,0.06)',
 };
 
-function MapPage() {
-  const [origin, setOrigin] = useState(null);
-  const [destination, setDestination] = useState(null);
-  const [modes, setModes] = useState(['car']);
-  const [routeResult, setRouteResult] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [anomalies] = useState([]);
+function MapPage({ apiStatus }) {
+  // Route state
+  const [origin, setOrigin]           = useState(null);   // { lat, lng }
+  const [destination, setDestination] = useState(null);   // { lat, lng }
+  const [modes, setModes]             = useState(['car']); // selected transport modes
+  const [routeResult, setRouteResult] = useState(null);   // API response
+  const [isLoading, setIsLoading]     = useState(false);
+  const [error, setError]             = useState(null);
+  const [graphNodes, setGraphNodes]   = useState([]);
 
+  // Anomaly state
+  const [anomalies, setAnomalies] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadGraphNodes = async () => {
+      try {
+        const snapshot = await getGraphSnapshot(false);
+        if (isMounted) {
+          setGraphNodes(Array.isArray(snapshot?.nodes) ? snapshot.nodes : []);
+        }
+      } catch (err) {
+        console.error('Failed to load graph nodes:', err);
+      }
+    };
+
+    loadGraphNodes();
+    return () => { isMounted = false; };
+  }, []);
+
+  // ─── Handle map clicks to set origin/destination ──────────
   const handleMapClick = (latlng) => {
     if (!origin) {
       setOrigin(latlng);
@@ -98,6 +122,7 @@ function MapPage() {
           origin={origin}
           destination={destination}
           routeResult={routeResult}
+          graphNodes={graphNodes}
           onMapClick={handleMapClick}
           onOriginDrag={handleOriginDrag}
           onDestinationDrag={handleDestinationDrag}

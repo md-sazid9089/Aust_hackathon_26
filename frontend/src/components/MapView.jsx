@@ -11,7 +11,7 @@
 
 import { createPortal } from 'react-dom';
 import { useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, useMapEvents, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMapEvents, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
 const originIcon = new L.DivIcon({
@@ -129,9 +129,9 @@ function MapFABControls({ defaultCenter, defaultZoom }) {
 
 // ─── Main MapView Component ───────────────────────────────────────
 
-function MapView({ origin, destination, routeResult, onMapClick, onOriginDrag, onDestinationDrag }) {
-  // Default center: Dhaka, near Ahsanullah University of Science and Technology
-  const defaultCenter = [23.7391, 90.3703];
+function MapView({ origin, destination, routeResult, graphNodes, onMapClick, onOriginDrag, onDestinationDrag }) {
+  // Default center: Ahsanullah University of Science and Technology area
+  const defaultCenter = [23.7639, 90.4066];
   const defaultZoom = 14;
 
   const routeCoords =
@@ -161,8 +161,17 @@ function MapView({ origin, destination, routeResult, onMapClick, onOriginDrag, o
     [onDestinationDrag]
   );
 
+  const nodeCoords = (graphNodes || []).map((node) => [node.lat, node.lng]);
+
   return (
-    <MapContainer center={defaultCenter} zoom={defaultZoom} style={{ width: '100%', height: '100%' }} zoomControl={false}>
+    <MapContainer
+      center={defaultCenter}
+      zoom={defaultZoom}
+      style={{ width: '100%', height: '100%' }}
+      zoomControl={false}
+      preferCanvas={true}
+    >
+      {/* ─── Base tile layer ──────────────────────────────── */}
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
@@ -213,6 +222,21 @@ function MapView({ origin, destination, routeResult, onMapClick, onOriginDrag, o
           }}
         />
       )}
+
+      {/* ─── Graph node dots (all road junction nodes) ───── */}
+      {nodeCoords.map((position, idx) => (
+        <CircleMarker
+          key={`graph-node-${idx}`}
+          center={position}
+          radius={1.8}
+          pathOptions={{
+            color: '#60a5fa',
+            weight: 0,
+            fillColor: '#60a5fa',
+            fillOpacity: 0.8,
+          }}
+        />
+      ))}
     </MapContainer>
   );
 }
