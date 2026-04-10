@@ -16,7 +16,31 @@ const MODE_COLORS = {
   rickshaw: '#ec4899',
 };
 
-function RoutePanel({ origin, destination, routeResult, isLoading, error, onCompute, onComputeMultimodal, onClear }) {
+const ROUTE_COLORS = {
+  min_time: '#3b82f6',
+  min_distance: '#22c55e',
+};
+
+const SEGMENT_MODE_COLORS = {
+  car: '#ef4444',
+  bike: '#8b5cf6',
+  rickshaw: '#facc15',
+  walk: '#9ca3af',
+  transit: '#dc2626',
+};
+
+function formatDistance(m) {
+  return m >= 1000 ? (m / 1000).toFixed(1) + ' km' : m.toFixed(0) + ' m';
+}
+
+function formatDuration(s) {
+  const hrs = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  if (hrs > 0) return `${hrs}h ${mins}m`;
+  return `${mins} min`;
+}
+
+function RoutePanel({ origin, destination, routeResult, isLoading, error, selectedRouteType, onRouteTypeChange, onCompute, onComputeMultimodal, onClear }) {
   const hasPoints = origin && destination;
 
   return (
@@ -185,43 +209,44 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
         </div>
       )}
 
-      {/* Route result */}
-      {routeResult && (
+      {/* Route result — Dual Route Display */}
+      {routeResult && (routeResult.min_time_route || routeResult.min_distance_route) && (
         <div className="animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {routeResult.legs.map((leg, idx) => (
-            <LegCard key={idx} leg={leg} index={idx} totalLegs={routeResult.legs.length} />
-          ))}
+          
+          {/* Route Selection Cards */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* Minimum Time Route Card */}
+            {routeResult.min_time_route && (
+              <RouteCard
+                routeType="time"
+                route={routeResult.min_time_route}
+                isSelected={selectedRouteType === 'time' || selectedRouteType === 'both'}
+                onSelect={() => onRouteTypeChange(selectedRouteType === 'time' ? 'both' : 'time')}
+              />
+            )}
+            
+            {/* Minimum Distance Route Card */}
+            {routeResult.min_distance_route && (
+              <RouteCard
+                routeType="distance"
+                route={routeResult.min_distance_route}
+                isSelected={selectedRouteType === 'distance' || selectedRouteType === 'both'}
+                onSelect={() => onRouteTypeChange(selectedRouteType === 'distance' ? 'both' : 'distance')}
+              />
+            )}
+          </div>
 
-          {/* Mode switches */}
-          {routeResult.mode_switches?.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <SectionLabel text="Mode Transfers" />
-              {routeResult.mode_switches.map((sw, idx) => (
-                <div key={idx} style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '8px 12px',
-                  background: 'rgba(0,0,0,0.25)',
-                  border: '1px solid rgba(255,255,255,0.05)',
-                  borderRadius: 10,
-                }}>
-                  <span style={{ fontSize: 15 }}>{getModeEmoji(sw.from_mode)}</span>
-                  <span style={{ color: '#333', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{'\u2192'}</span>
-                  <span style={{ fontSize: 15 }}>{getModeEmoji(sw.to_mode)}</span>
-                  <span style={{
-                    marginLeft: 'auto',
-                    color: '#f59e0b',
-                    fontFamily: 'JetBrains Mono, monospace',
-                    fontSize: 11, fontWeight: 700,
-                  }}>
-                    +{sw.penalty_time_s}s
-                  </span>
-                </div>
-              ))}
-            </div>
+          {/* Detailed View - Show current selection details */}
+          {(selectedRouteType === 'time' && routeResult.min_time_route) && (
+            <DetailedRouteView route={routeResult.min_time_route} routeType="time" />
+          )}
+          
+          {(selectedRouteType === 'distance' && routeResult.min_distance_route) && (
+            <DetailedRouteView route={routeResult.min_distance_route} routeType="distance" />
           )}
 
           {/* Anomalies avoided */}
-          {routeResult.anomalies_avoided > 0 && (
+          {(routeResult.anomalies_avoided > 0) && (
             <div style={{
               padding: '10px 14px',
               background: 'rgba(245,158,11,0.06)',
@@ -374,6 +399,203 @@ function WaypointDisplay({ label, latlng, accentColor, emptyText }) {
         }}>
           {emptyText}
         </span>
+      )}
+    </div>
+  );
+}
+
+// Route Card Component - Shows summary of each route
+function RouteCard({ routeType, route, isSelected, onSelect }) {
+  const isTimeRoute = routeType === 'time';
+  const color = isTimeRoute ? ROUTE_COLORS.min_time : ROUTE_COLORS.min_distance;
+  const label = isTimeRoute ? 'Fastest Route' : 'Shortest Route';
+  const icon = isTimeRoute ? '⚡' : '📏';
+  
+  // Extract modes from legs
+  const modes = route.legs?.map(leg => leg.mode).filter((m, i, arr) => arr.indexOf(m) === i) || [];
+  const modeString = modes.length > 0 ? modes.map(m => {
+    const modeEmojis = { car: '🚗', bike: '🚴', walk: '🚶', transit: '🚌', rickshaw: '🛺' };
+    return modeEmojis[m] || m;
+  }).join(' → ') : 'Unknown';
+
+  return (
+    <button
+      onClick={onSelect}
+      style={{
+        padding: '14px',
+        borderRadius: 14,
+        border: `2px solid ${isSelected ? color : 'rgba(255,255,255,0.1)'}`,
+        background: isSelected 
+          ? `${color}15`
+          : 'rgba(0,0,0,0.25)',
+        cursor: 'pointer',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        transition: 'all 0.2s ease',
+        boxShadow: isSelected 
+          ? `0 8px 24px ${color}30, inset 0 1px 0 rgba(255,255,255,0.1)`
+          : 'none',
+      }}
+      onMouseEnter={(e) => {
+        if (!isSelected) {
+          e.currentTarget.style.borderColor = `${color}60`;
+          e.currentTarget.style.background = `${color}08`;
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!isSelected) {
+          e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+          e.currentTarget.style.background = 'rgba(0,0,0,0.25)';
+        }
+      }}
+    >
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flex: 1,
+        }}>
+          <span style={{ fontSize: 18 }}>{icon}</span>
+          <span style={{
+            fontWeight: 800,
+            fontSize: 13,
+            color: color,
+            fontFamily: 'Inter, system-ui, sans-serif',
+            textTransform: 'uppercase',
+            letterSpacing: '-0.01em',
+          }}>
+            {label}
+          </span>
+        </div>
+        {isSelected && (
+          <span style={{
+            fontSize: 14,
+            color: color,
+            fontWeight: 800,
+          }}>
+            ✓
+          </span>
+        )}
+      </div>
+
+      {/* Metrics */}
+      <div style={{
+        display: 'flex',
+        gap: 12,
+        fontSize: 12,
+        fontFamily: 'JetBrains Mono, monospace',
+        fontWeight: 700,
+      }}>
+        <div style={{ color: '#a3a3a3' }}>
+          {formatDuration(route.total_duration_s)}
+        </div>
+        <span style={{ color: '#404040' }}>•</span>
+        <div style={{ color: '#a3a3a3' }}>
+          {formatDistance(route.total_distance_m)}
+        </div>
+      </div>
+
+      {/* Modes */}
+      <div style={{
+        fontSize: 12,
+        color: '#606060',
+        fontFamily: 'Inter, system-ui, sans-serif',
+        fontWeight: 600,
+      }}>
+        {modeString}
+      </div>
+    </button>
+  );
+}
+
+// Detailed Route View - Shows full breakdown when route is selected
+function DetailedRouteView({ route, routeType }) {
+  const isTimeRoute = routeType === 'time';
+  
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Leg breakdown */}
+      {route.legs?.map((leg, idx) => (
+        <div key={idx} style={{
+          background: 'rgba(0,0,0,0.25)',
+          border: `2px solid ${SEGMENT_MODE_COLORS[leg.mode] || '#666'}`,
+          borderRadius: 10,
+          padding: '10px 12px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}>
+          <div style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: SEGMENT_MODE_COLORS[leg.mode] || '#666',
+            flex: 0,
+          }} />
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+          }}>
+            <div style={{
+              fontSize: 11,
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              color: SEGMENT_MODE_COLORS[leg.mode] || '#999',
+              fontFamily: 'JetBrains Mono, monospace',
+              letterSpacing: '0.04em',
+            }}>
+              {leg.mode}
+            </div>
+            <div style={{
+              fontSize: 10,
+              color: '#999',
+              fontFamily: 'JetBrains Mono, monospace',
+            }}>
+              {formatDistance(leg.distance_m)} • {formatDuration(leg.duration_s)}
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Mode switches */}
+      {route.mode_switches?.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+          <SectionLabel text="Mode Transfers" />
+          {route.mode_switches.map((sw, idx) => (
+            <div key={idx} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 12px',
+              background: 'rgba(0,0,0,0.25)',
+              border: '1px solid rgba(255,255,255,0.05)',
+              borderRadius: 10,
+              fontSize: 11,
+            }}>
+              <span style={{ fontSize: 14 }}>{getModeEmoji(sw.from_mode)}</span>
+              <span style={{ color: '#404040', fontWeight: 700 }}>{'\u2192'}</span>
+              <span style={{ fontSize: 14 }}>{getModeEmoji(sw.to_mode)}</span>
+              <span style={{
+                marginLeft: 'auto',
+                color: '#f59e0b',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontWeight: 700,
+              }}>
+                +{(sw.penalty_time_s || 0).toFixed(0)}s
+              </span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -598,21 +820,6 @@ function getModeEmoji(mode) {
     transit: '\u{1F68C}',
     rickshaw: '\u{1F6FA}',
   })[mode] || '\u{1F4CD}';
-}
-
-function formatDistance(meters) {
-  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
-  return `${Math.round(meters)} m`;
-}
-
-function formatDuration(seconds) {
-  if (seconds >= 3600) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.round((seconds % 3600) / 60);
-    return `${h}h ${m}m`;
-  }
-  if (seconds >= 60) return `${Math.round(seconds / 60)} min`;
-  return `${Math.round(seconds)}s`;
 }
 
 export default RoutePanel;

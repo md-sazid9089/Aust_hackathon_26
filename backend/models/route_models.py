@@ -123,3 +123,11 @@ class RouteResponse(BaseModel):
         default_factory=list,
         description="Segment-wise vehicle suggestions for shortest-distance and fastest-time strategies",
     )
+    min_time_route: Optional[dict] = Field(
+        None,
+        description="Route optimized for minimum time with legs, mode_switches, total_duration_s, total_distance_m",
+    )
+    min_distance_route: Optional[dict] = Field(
+        None,
+        description="Route optimized for minimum distance with legs, mode_switches, total_distance_m, total_duration_s",
+    )

@@ -14,14 +14,6 @@ import { useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMapEvents, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
-const SEGMENT_MODE_COLORS = {
-  car: '#ef4444',      // red
-  bike: '#22c55e',     // green
-  rickshaw: '#facc15', // yellow
-  walk: '#f97316',     // orange
-  transit: '#3b82f6',  // blue (bus/transit)
-};
-
 const SINGLE_MODE_COLORS = {
   car: '#ef4444',
   bike: '#22c55e',
@@ -30,7 +22,22 @@ const SINGLE_MODE_COLORS = {
   transit: '#3b82f6',
 };
 
-// Mode-specific node colors for visualization
+// Route-level colors
+const ROUTE_COLORS = {
+  min_time: '#3b82f6',      // Blue for minimum time
+  min_distance: '#22c55e',  // Green for minimum distance
+};
+
+// Mode-based segment colors (shown when single route selected)
+const SEGMENT_MODE_COLORS = {
+  car: '#ef4444',      // red
+  bike: '#8b5cf6',     // purple
+  rickshaw: '#facc15', // yellow
+  walk: '#9ca3af',     // gray
+  transit: '#dc2626',  // red (bus)
+};
+
+// Mode-specific node colors
 const MODE_NODE_COLORS = {
   car: '#ef4444',      // red
   bike: '#22c55e',     // green
@@ -154,7 +161,7 @@ function MapFABControls({ defaultCenter, defaultZoom }) {
 
 // ─── Main MapView Component ───────────────────────────────────────
 
-function MapView({ origin, destination, routeResult, selectedMode, graphNodes, onMapClick, onOriginDrag, onDestinationDrag }) {
+function MapView({ origin, destination, routeResult, selectedMode, graphNodes, selectedRouteType, onRouteTypeChange, onMapClick, onOriginDrag, onDestinationDrag }) {
   // Default center: Ahsanullah University of Science and Technology area
   const defaultCenter = [23.7639, 90.4066];
   const defaultZoom = 14;
@@ -164,28 +171,72 @@ function MapView({ origin, destination, routeResult, selectedMode, graphNodes, o
 
   const singleModeLineColor = SINGLE_MODE_COLORS[selectedMode] || '#22c55e';
 
-  const coloredSegments = useMemo(() => {
-    const suggestions = routeResult?.multimodal_suggestions || [];
-    if (!Array.isArray(suggestions) || suggestions.length === 0) {
-      return [];
-    }
+  // Build route segments from legs
+  const buildRouteSegments = (legs, routeType) => {
+    if (!legs || !Array.isArray(legs)) return [];
+    
+    return legs
+      .flatMap((leg, legIdx) => {
+        if (!leg.geometry || leg.geometry.length < 2) return [];
+        
+        return [{
+          key: `${routeType}-leg-${legIdx}`,
+          routeType,
+          mode: leg.mode,
+          positions: leg.geometry.map((p) => [p.lat, p.lng]),
+          distance_m: leg.distance_m,
+          duration_s: leg.duration_s,
+        }];
+      });
+  };
 
-    const fastest = suggestions.find((s) => s.strategy === 'fastest_time');
-    const shortest = suggestions.find((s) => s.strategy === 'shortest_distance');
-    const chosen = fastest || shortest;
-    if (!chosen || !Array.isArray(chosen.segments)) {
-      return [];
-    }
-
-    return chosen.segments
-      .filter((seg) => Array.isArray(seg.geometry) && seg.geometry.length >= 2)
-      .map((seg, idx) => ({
-        key: `seg-${idx}`,
-        mode: seg.recommended_vehicle,
-        color: SEGMENT_MODE_COLORS[seg.recommended_vehicle] || '#22c55e',
-        positions: seg.geometry.map((p) => [p.lat, p.lng]),
-      }));
+  // Process both routes
+  const allRoutes = useMemo(() => {
+    if (!routeResult) return { timeRoute: [], distRoute: [], combined: [] };
+    
+    const timeRoute = buildRouteSegments(routeResult.min_time_route?.legs, 'time');
+    const distRoute = buildRouteSegments(routeResult.min_distance_route?.legs, 'distance');
+    
+    return { timeRoute, distRoute, combined: [...timeRoute, ...distRoute] };
   }, [routeResult]);
+
+  // Render routes based on selection
+  const renderedRoutes = useMemo(() => {
+    if (selectedRouteType === 'both') {
+      // Show both routes with route colors (merge overlaps)
+      return [
+        ...allRoutes.timeRoute.map((seg) => ({
+          ...seg,
+          color: ROUTE_COLORS.min_time,
+          weight: 5,
+          opacity: 0.8,
+        })),
+        ...allRoutes.distRoute.map((seg) => ({
+          ...seg,
+          color: ROUTE_COLORS.min_distance,
+          weight: 5,
+          opacity: 0.8,
+        })),
+      ];
+    } else if (selectedRouteType === 'time' && allRoutes.timeRoute.length > 0) {
+      // Show only time route with mode colors
+      return allRoutes.timeRoute.map((seg) => ({
+        ...seg,
+        color: SEGMENT_MODE_COLORS[seg.mode] || '#3b82f6',
+        weight: 6,
+        opacity: 0.95,
+      }));
+    } else if (selectedRouteType === 'distance' && allRoutes.distRoute.length > 0) {
+      // Show only distance route with mode colors
+      return allRoutes.distRoute.map((seg) => ({
+        ...seg,
+        color: SEGMENT_MODE_COLORS[seg.mode] || '#22c55e',
+        weight: 6,
+        opacity: 0.95,
+      }));
+    }
+    return [];
+  }, [allRoutes, selectedRouteType]);
 
   const originDragHandlers = useMemo(
     () => ({
@@ -280,32 +331,20 @@ function MapView({ origin, destination, routeResult, selectedMode, graphNodes, o
         </Marker>
       )}
 
-      {coloredSegments.length > 0 ? (
-        coloredSegments.map((seg) => (
-          <Polyline
-            key={seg.key}
-            positions={seg.positions}
-            pathOptions={{
-              color: seg.color,
-              weight: 6,
-              opacity: 0.95,
-              lineCap: 'round',
-              lineJoin: 'round',
-            }}
-          />
-        ))
-      ) : routeCoords.length >= 2 ? (
+      {/* ─── Both routes or single route polylines ──────────── */}
+      {renderedRoutes.map((seg) => (
         <Polyline
-          positions={routeCoords}
+          key={seg.key}
+          positions={seg.positions}
           pathOptions={{
-            color: singleModeLineColor,
-            weight: 5,
-            opacity: 0.85,
+            color: seg.color,
+            weight: seg.weight || 5,
+            opacity: seg.opacity || 0.8,
             lineCap: 'round',
             lineJoin: 'round',
           }}
         />
-      ) : null}
+      ))}
 
       {/* ─── Graph node dots (filtered by selected mode) ───── */}
       {filteredNodes.map((node, idx) => (

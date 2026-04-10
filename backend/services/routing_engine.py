@@ -40,27 +40,82 @@ class RoutingEngine:
     async def compute(self, request: RouteRequest) -> RouteResponse:
         await self._refresh_ml_weights()
 
+        # Always compute BOTH time-optimized and distance-optimized routes
+        # Compute time-optimized route
+        time_request = RouteRequest(
+            origin=request.origin,
+            destination=request.destination,
+            modes=request.modes,
+            optimize="time",
+            avoid_anomalies=request.avoid_anomalies,
+            max_alternatives=request.max_alternatives,
+            include_multimodal=request.include_multimodal,
+        )
+        
+        # Compute distance-optimized route
+        dist_request = RouteRequest(
+            origin=request.origin,
+            destination=request.destination,
+            modes=request.modes,
+            optimize="distance",
+            avoid_anomalies=request.avoid_anomalies,
+            max_alternatives=request.max_alternatives,
+            include_multimodal=request.include_multimodal,
+        )
+
+        # Compute both routes
         if len(request.modes) == 1:
-            legs, switches, anomalies_avoided = await self._single_modal(
+            time_legs, time_switches, time_anomalies = await self._single_modal(
                 origin=request.origin,
                 destination=request.destination,
                 mode=request.modes[0],
-                optimize=request.optimize,
+                optimize="time",
+                avoid_anomalies=request.avoid_anomalies,
+            )
+            dist_legs, dist_switches, dist_anomalies = await self._single_modal(
+                origin=request.origin,
+                destination=request.destination,
+                mode=request.modes[0],
+                optimize="distance",
                 avoid_anomalies=request.avoid_anomalies,
             )
         else:
-            legs, switches, anomalies_avoided = await self._multi_modal(
+            time_legs, time_switches, time_anomalies = await self._multi_modal(
                 origin=request.origin,
                 destination=request.destination,
                 modes=request.modes,
-                optimize=request.optimize,
+                optimize="time",
+                avoid_anomalies=request.avoid_anomalies,
+            )
+            dist_legs, dist_switches, dist_anomalies = await self._multi_modal(
+                origin=request.origin,
+                destination=request.destination,
+                modes=request.modes,
+                optimize="distance",
                 avoid_anomalies=request.avoid_anomalies,
             )
 
-        total_dist = sum(leg.distance_m for leg in legs)
-        total_dur = sum(leg.duration_s for leg in legs) + sum(
-            sw.penalty_time_s for sw in switches
+        # Calculate totals for both routes
+        time_dist = sum(leg.distance_m for leg in time_legs)
+        time_dur = sum(leg.duration_s for leg in time_legs) + sum(
+            sw.penalty_time_s for sw in time_switches
         )
+        
+        dist_dist = sum(leg.distance_m for leg in dist_legs)
+        dist_dur = sum(leg.duration_s for leg in dist_legs) + sum(
+            sw.penalty_time_s for sw in dist_switches
+        )
+
+        # Use the requested optimization for main response (backward compat)
+        if request.optimize == "distance":
+            legs = dist_legs
+            switches = dist_switches
+            anomalies_avoided = dist_anomalies
+        else:
+            legs = time_legs
+            switches = time_switches
+            anomalies_avoided = time_anomalies
+
         total_cost = sum(leg.cost for leg in legs) + sum(
             sw.penalty_cost for sw in switches
         )
@@ -74,15 +129,32 @@ class RoutingEngine:
             else []
         )
 
+        # Build response with both routes included
         return RouteResponse(
             legs=legs,
             mode_switches=switches,
-            total_distance_m=total_dist,
-            total_duration_s=total_dur,
+            total_distance_m=sum(leg.distance_m for leg in legs),
+            total_duration_s=sum(leg.duration_s for leg in legs) + sum(
+                sw.penalty_time_s for sw in switches
+            ),
             total_cost=total_cost,
             anomalies_avoided=anomalies_avoided,
             alternatives=alternatives,
             multimodal_suggestions=multimodal_suggestions,
+            min_time_route={
+                "legs": [leg.model_dump() for leg in time_legs],
+                "mode_switches": [sw.model_dump() for sw in time_switches],
+                "total_distance_m": time_dist,
+                "total_duration_s": time_dur,
+                "anomalies_avoided": time_anomalies,
+            },
+            min_distance_route={
+                "legs": [leg.model_dump() for leg in dist_legs],
+                "mode_switches": [sw.model_dump() for sw in dist_switches],
+                "total_distance_m": dist_dist,
+                "total_duration_s": dist_dur,
+                "anomalies_avoided": dist_anomalies,
+            },
         )
 
     async def _single_modal(

@@ -21,6 +21,7 @@ function MapPage({ apiStatus }) {
   const [error, setError] = useState(null);
   const [graphNodes, setGraphNodes] = useState([]);
   const [anomalies] = useState([]);
+  const [selectedRouteType, setSelectedRouteType] = useState('both'); // 'both', 'time', 'distance'
 
   useEffect(() => {
     let isMounted = true;
@@ -59,12 +60,13 @@ function MapPage({ apiStatus }) {
     }
     setIsLoading(true);
     setError(null);
+    setSelectedRouteType('both'); // Show both routes by default
     try {
       const result = await computeRoute({
         origin,
         destination,
         modes: [modes?.[0] || 'car'],
-        optimize: 'time',
+        optimize: 'time', // Backend will compute both
         avoid_anomalies: true,
         include_multimodal: includeMultimodal,
       });
@@ -81,6 +83,7 @@ function MapPage({ apiStatus }) {
     setDestination(null);
     setRouteResult(null);
     setError(null);
+    setSelectedRouteType('both');
   };
 
   const handleOriginDrag = (latlng) => {
@@ -111,6 +114,8 @@ function MapPage({ apiStatus }) {
           routeResult={routeResult}
           selectedMode={modes?.[0] || 'car'}
           graphNodes={graphNodes}
+          selectedRouteType={selectedRouteType}
+          onRouteTypeChange={setSelectedRouteType}
           onMapClick={handleMapClick}
           onOriginDrag={handleOriginDrag}
           onDestinationDrag={handleDestinationDrag}
@@ -171,6 +176,8 @@ function MapPage({ apiStatus }) {
             routeResult={routeResult}
             isLoading={isLoading}
             error={error}
+            selectedRouteType={selectedRouteType}
+            onRouteTypeChange={setSelectedRouteType}
             onCompute={() => handleComputeRoute(false)}
             onComputeMultimodal={() => handleComputeRoute(true)}
             onClear={handleClear}
