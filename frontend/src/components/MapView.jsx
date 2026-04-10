@@ -145,9 +145,9 @@ function MapFABControls({ defaultCenter, defaultZoom }) {
 // ─── Main MapView Component ───────────────────────────────────────
 
 function MapView({ origin, destination, routeResult, onMapClick }) {
-  // Default center: San Francisco (matches config.json default_location)
-  const defaultCenter = [37.7749, -122.4194];
-  const defaultZoom = 13;
+  // Default center: Dhaka, near Ahsanullah University of Science and Technology
+  const defaultCenter = [23.7391, 90.3703];
+  const defaultZoom = 14;
 
   // Extract route geometry from all legs
   const routeCoords = routeResult?.legs?.flatMap((leg) =>
