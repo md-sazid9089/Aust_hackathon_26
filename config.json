@@ -104,8 +104,8 @@
   "database": {
     "driver": "mysql+pymysql",
     "user": "golitransit",
-    "password": "golitransit",
-    "host": "db",
+    "password": "golitransit_pass",
+    "host": "mysql",
     "port": 3306,
     "database": "golitransit"
   },
