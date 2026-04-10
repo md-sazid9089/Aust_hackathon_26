@@ -38,6 +38,7 @@ export async function computeRoute({
   optimize = 'time',
   avoid_anomalies = true,
   max_alternatives = null,
+  include_multimodal = false,
 }) {
   const payload = {
     origin: { lat: origin.lat, lng: origin.lng },
@@ -45,6 +46,7 @@ export async function computeRoute({
     modes,
     optimize,
     avoid_anomalies,
+    include_multimodal,
   };
 
   if (max_alternatives !== null) {
