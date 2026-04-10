@@ -56,11 +56,10 @@ class AnomalyReport(BaseModel):
     vehicle_types: list[str] = Field(default_factory=list)
     target: Optional[AnomalyTarget] = None
     effects: Optional[AnomalyEffects] = None
-    severity: float = Field(
+    severity: float | str = Field(
         ...,
-        gt=0,
-        description="Weight multiplier to apply on matching edges and vehicle types",
-        examples=[5],
+        description="Severity label (low/medium/high/critical) or numeric weight multiplier (> 0)",
+        examples=["high", 5],
     )
     type: str = Field(
         ...,

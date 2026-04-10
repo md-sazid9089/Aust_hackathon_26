@@ -66,8 +66,9 @@ class AnomalyService:
         if not affected_edges:
             raise ValueError("No valid edges resolved for anomaly report")
 
-        effects = self._resolve_effects(report)
-        multiplier = float(report.severity)
+        severity_multiplier = self._resolve_severity_multiplier(report.severity)
+        effects = self._resolve_effects(report, severity_multiplier)
+        multiplier = float(severity_multiplier)
         vehicle_types = sorted(
             set(effects.weight_multiplier.keys()).union(set(effects.disable_modes))
         )
@@ -309,6 +310,11 @@ class AnomalyService:
             nearest_node = graph_service.get_nearest_node(
                 report.location.lat, report.location.lng
             )
+            if nearest_node is None:
+                # Fallback for out-of-bounds coordinates: snap to absolute nearest node.
+                nearest_node, _ = graph_service.get_nearest_node_with_distance(
+                    report.location.lat, report.location.lng
+                )
             if nearest_node:
                 graph = graph_service.get_graph()
                 if graph:
@@ -316,6 +322,17 @@ class AnomalyService:
                         edge_ids.append(f"{nearest_node}->{v}")
                     for u, _, _ in graph.in_edges(nearest_node, keys=True):
                         edge_ids.append(f"{u}->{nearest_node}")
+
+        if (
+            not edge_ids
+            and report.location
+            and report.location.lat is not None
+            and report.location.lng is not None
+        ):
+            # Preserve location-scoped anomalies even if no graph edge could be resolved.
+            edge_ids = [
+                f"virtual:{float(report.location.lat):.6f},{float(report.location.lng):.6f}"
+            ]
 
         edge_ids = list(dict.fromkeys(edge_ids))
         edge_ids = self._expand_bidirectional_edge_ids(edge_ids)
@@ -380,7 +397,11 @@ class AnomalyService:
 
         return list(dict.fromkeys(edge_ids))
 
-    def _resolve_effects(self, report: AnomalyReport) -> AnomalyEffects:
+    def _resolve_effects(
+        self,
+        report: AnomalyReport,
+        severity_value: float,
+    ) -> AnomalyEffects:
         # If explicit effects are provided, trust them (normalized aliases).
         if report.effects is not None:
             return AnomalyEffects(
@@ -395,7 +416,7 @@ class AnomalyService:
             )
 
         anomaly_type = (report.type or "").strip().lower()
-        severity = max(float(report.severity), 1.0)
+        severity = max(float(severity_value), 1.0)
         severity_factor = max(0.4, min(severity / 3.0, 2.0))
 
         def scale(base: float) -> float:
@@ -466,9 +487,42 @@ class AnomalyService:
         # Fallback generic weighted anomaly.
         explicit_modes = self._resolve_vehicle_types(report.vehicle_types)
         return AnomalyEffects(
-            weight_multiplier={m: float(report.severity) for m in explicit_modes},
+            weight_multiplier={m: float(severity_value) for m in explicit_modes},
             disable_modes=[],
         )
+
+    def _resolve_severity_multiplier(self, severity: float | str) -> float:
+        if isinstance(severity, (int, float)):
+            value = float(severity)
+            if value <= 0:
+                raise ValueError("severity must be greater than 0")
+            return value
+
+        text = str(severity).strip().lower()
+        if not text:
+            raise ValueError("severity is required")
+
+        multipliers = settings.anomaly_config.get("weight_multipliers", {})
+        if text in multipliers:
+            value = float(multipliers[text])
+            if value <= 0:
+                raise ValueError(
+                    f"Configured multiplier for severity '{text}' must be greater than 0"
+                )
+            return value
+
+        try:
+            value = float(text)
+        except ValueError:
+            allowed = sorted(multipliers.keys())
+            raise ValueError(
+                f"Invalid severity '{severity}'. Use a numeric multiplier or one of {allowed}"
+            )
+
+        if value <= 0:
+            raise ValueError("severity must be greater than 0")
+
+        return value
 
     def _resolve_vehicle_types(self, vehicle_types: list[str]) -> list[str]:
         if not vehicle_types:

@@ -41,9 +41,13 @@ class RoutingEngine:
         self._max_alts = settings.max_alternatives
         self._max_transfers = settings.multimodal_max_transfers
         self._transfer_radius = settings.transfer_radius_meters
-        self._shortest_tree_cache: OrderedDict[tuple, tuple[dict, dict, float]] = OrderedDict()
+        self._shortest_tree_cache: OrderedDict[tuple, tuple[dict, dict, float]] = (
+            OrderedDict()
+        )
         self._shortest_tree_cache_max = 256
-        self._route_response_cache: OrderedDict[tuple, tuple[RouteResponse, float]] = OrderedDict()
+        self._route_response_cache: OrderedDict[tuple, tuple[RouteResponse, float]] = (
+            OrderedDict()
+        )
         self._route_response_cache_max = 512
         self._route_response_ttl_s = 90.0
 
@@ -98,7 +102,10 @@ class RoutingEngine:
         return self._clone_response(response)
 
     def _route_cache_set(self, key: tuple, response: RouteResponse):
-        self._route_response_cache[key] = (self._clone_response(response), time.monotonic())
+        self._route_response_cache[key] = (
+            self._clone_response(response),
+            time.monotonic(),
+        )
         self._route_response_cache.move_to_end(key)
         while len(self._route_response_cache) > self._route_response_cache_max:
             self._route_response_cache.popitem(last=False)
@@ -510,7 +517,9 @@ class RoutingEngine:
             if origin_node is None:
                 origin_node = graph_service.get_nearest_node(origin.lat, origin.lng)
             if dest_node is None:
-                dest_node = graph_service.get_nearest_node(destination.lat, destination.lng)
+                dest_node = graph_service.get_nearest_node(
+                    destination.lat, destination.lng
+                )
 
             allowed_modes = list(dict.fromkeys(modes))
             switch_penalty = float(
@@ -720,7 +729,9 @@ class RoutingEngine:
         if legs:
             first_leg = legs[0]
             if first_leg.geometry:
-                first_leg.instructions[0] = f"Start at ({origin.lat:.5f}, {origin.lng:.5f})"
+                first_leg.instructions[0] = (
+                    f"Start at ({origin.lat:.5f}, {origin.lng:.5f})"
+                )
 
             last_leg = legs[-1]
             if last_leg.geometry:
