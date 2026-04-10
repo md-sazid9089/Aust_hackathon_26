@@ -66,6 +66,18 @@ class RouteLeg(BaseModel):
         default_factory=list,
         description="Turn-by-turn navigation instructions",
     )
+    traffic_edges: list["RouteTrafficEdge"] = Field(
+        default_factory=list,
+        description="Road-edge references used for traffic jam prediction",
+    )
+
+
+class RouteTrafficEdge(BaseModel):
+    """Edge metadata used by traffic-jam prediction."""
+
+    edge_id: str
+    road_type: str = "unknown"
+    length_m: float = 0.0
 
 
 class ModeSwitch(BaseModel):
@@ -105,6 +117,18 @@ class MultimodalSuggestion(BaseModel):
     segments: list[SegmentSuggestion] = Field(default_factory=list)
 
 
+class TrafficJamPrediction(BaseModel):
+    """Route-level chance of hitting traffic jam for the selected hour."""
+
+    hour_of_day: int = Field(..., ge=0, le=23)
+    route_jam_chance_pct: float = Field(..., ge=0.0, le=100.0)
+    edges_analyzed: int = 0
+    heavy_edges: int = 0
+    moderate_edges: int = 0
+    low_edges: int = 0
+    confidence: float = Field(0.0, ge=0.0, le=1.0)
+
+
 class RouteResponse(BaseModel):
     """Full response for a route computation."""
     legs: list[RouteLeg]
@@ -122,4 +146,8 @@ class RouteResponse(BaseModel):
     multimodal_suggestions: list[MultimodalSuggestion] = Field(
         default_factory=list,
         description="Segment-wise vehicle suggestions for shortest-distance and fastest-time strategies",
+    )
+    traffic_jam_prediction: Optional[TrafficJamPrediction] = Field(
+        default=None,
+        description="Predicted chance (percentage) of facing traffic jam on the selected route at current hour",
     )

@@ -19,6 +19,10 @@ class GraphNode(BaseModel):
     id: str = Field(..., description="Unique node identifier (OSM node ID)")
     lat: float
     lng: float
+    accessible_modes: list[str] = Field(
+        default_factory=list,
+        description="List of transport modes that can access this node (car, bike, walk, transit, rickshaw)"
+    )
 
 
 class GraphEdge(BaseModel):

@@ -37,6 +37,7 @@ function MapPage({ apiStatus }) {
     let isMounted = true;
     const loadGraphNodes = async () => {
       try {
+        // Load all nodes with accessibility info (don't filter server-side yet)
         const snapshot = await getGraphSnapshot(false);
         if (isMounted) {
           setGraphNodes(Array.isArray(snapshot?.nodes) ? snapshot.nodes : []);

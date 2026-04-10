@@ -32,6 +32,15 @@ const SINGLE_MODE_COLORS = {
   transit: '#ef4444',
 };
 
+// Mode-specific node colors for visualization
+const MODE_NODE_COLORS = {
+  car: '#ef4444',      // red
+  bike: '#22c55e',     // green
+  walk: '#f97316',     // orange
+  transit: '#3b82f6',  // blue
+  rickshaw: '#facc15', // yellow
+};
+
 const originIcon = new L.DivIcon({
   className: '',
   html: `<div style="
@@ -219,7 +228,23 @@ function MapView({
     [onDestinationDrag]
   );
 
-  const nodeCoords = (graphNodes || []).map((node) => [node.lat, node.lng]);
+  // Filter nodes by selected mode and compute their visualization
+  const filteredNodes = useMemo(() => {
+    if (!graphNodes || !Array.isArray(graphNodes)) return [];
+    
+    return graphNodes
+      .filter((node) => {
+        // Show node if it's accessible by the current mode
+        return node.accessible_modes && node.accessible_modes.includes(selectedMode);
+      })
+      .map((node) => ({
+        ...node,
+        position: [node.lat, node.lng],
+        color: MODE_NODE_COLORS[selectedMode] || '#60a5fa',
+        // Calculate opacity based on how many modes can access this node
+        opacity: Math.min(0.9, 0.5 + (node.accessible_modes.length * 0.1)),
+      }));
+  }, [graphNodes, selectedMode]);
 
   const nodeLookup = useMemo(() => {
     const map = new Map();
@@ -423,19 +448,44 @@ function MapView({
         />
       )}
 
-      {/* ─── Graph node dots (all road junction nodes) ───── */}
-      {nodeCoords.map((position, idx) => (
+      {/* ─── Graph node dots (filtered by selected mode) ───── */}
+      {filteredNodes.map((node, idx) => (
         <CircleMarker
-          key={`graph-node-${idx}`}
-          center={position}
-          radius={2.6}
+          key={`graph-node-${node.id}-${idx}`}
+          center={node.position}
+          radius={2.2}
           pathOptions={{
-            color: '#93c5fd',
-            weight: 0,
-            fillColor: '#93c5fd',
-            fillOpacity: 0.95,
+            color: node.color,
+            weight: 1.5,
+            fillColor: node.color,
+            fillOpacity: node.opacity,
           }}
-        />
+        >
+          <Popup>
+            <div style={{ fontSize: 12, fontFamily: 'monospace' }}>
+              <div style={{ fontWeight: 700, marginBottom: 4, color: node.color }}>
+                Node {node.id}
+              </div>
+              <div style={{ fontSize: 11, marginBottom: 2 }}>
+                {node.lat.toFixed(5)}, {node.lng.toFixed(5)}
+              </div>
+              <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
+                Accessible to:
+              </div>
+              <div style={{ fontSize: 10, marginTop: 2 }}>
+                {node.accessible_modes?.length > 0 ? (
+                  node.accessible_modes.map((m) => (
+                    <div key={m} style={{ color: MODE_NODE_COLORS[m] }}>
+                      • {m}
+                    </div>
+                  ))
+                ) : (
+                  <span style={{ color: '#666' }}>No modes</span>
+                )}
+              </div>
+            </div>
+          </Popup>
+        </CircleMarker>
       ))}
     </MapContainer>
   );

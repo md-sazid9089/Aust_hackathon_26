@@ -487,6 +487,45 @@ class GraphService:
             "fraction": best_fraction,
         }
 
+    def get_node_accessibility(self, node_id: str) -> list[str]:
+        """
+        Determine which transport modes can access a given node.
+        
+        A node is accessible to a mode if at least one outgoing edge
+        allows that mode (has mode_allowed=True).
+        
+        Args:
+            node_id: The node ID to check
+            
+        Returns:
+            List of mode strings (car, bike, walk, transit, rickshaw) that can access this node
+        """
+        if not self._graph or node_id not in self._graph:
+            return []
+        
+        accessible = set()
+        
+        # Check all outgoing edges from this node
+        if node_id in self._graph:
+            for v, edge_dict in self._graph[node_id].items():
+                for key, data in edge_dict.items():
+                    # Check each mode
+                    for mode in settings.vehicle_types.keys():
+                        mode_flag = f"{mode}_allowed"
+                        if bool(data.get(mode_flag, False)):
+                            accessible.add(mode)
+        
+        # Also check incoming edges
+        for u in self._graph.pred.get(node_id, {}):
+            edge_dict = self._graph[u].get(node_id, {})
+            for key, data in edge_dict.items():
+                for mode in settings.vehicle_types.keys():
+                    mode_flag = f"{mode}_allowed"
+                    if bool(data.get(mode_flag, False)):
+                        accessible.add(mode)
+        
+        return sorted(list(accessible))
+
     def get_subgraph_for_mode(self, mode: str):
         if not self._graph:
             return None
@@ -543,8 +582,19 @@ class GraphService:
                 edge_data["ml_predicted"] = True
 
     def get_snapshot(
-        self, include_edges: bool = False, bbox: Optional[tuple] = None
+        self, include_edges: bool = False, bbox: Optional[tuple] = None, mode_filter: Optional[str] = None
     ) -> GraphSnapshot:
+        """
+        Get a snapshot of the graph, optionally filtered by transport mode.
+        
+        Args:
+            include_edges: If True, include full edge list
+            bbox: Optional bounding box tuple (south, west, north, east)
+            mode_filter: Optional mode to filter nodes by accessibility
+            
+        Returns:
+            GraphSnapshot with filtered nodes and edges
+        """
         if not self._graph:
             return GraphSnapshot(
                 node_count=0,
@@ -582,7 +632,19 @@ class GraphService:
             lat = float(data.get("y") or 0.0)
             lng = float(data.get("x") or 0.0)
             if in_bbox(lat, lng):
-                nodes.append(GraphNode(id=str(node_id), lat=lat, lng=lng))
+                # Compute accessible modes for this node
+                accessible_modes = self.get_node_accessibility(node_id)
+                
+                # Filter by mode if specified
+                if mode_filter is not None and mode_filter not in accessible_modes:
+                    continue
+                
+                nodes.append(GraphNode(
+                    id=str(node_id),
+                    lat=lat,
+                    lng=lng,
+                    accessible_modes=accessible_modes
+                ))
 
         if include_edges:
             for u, v, _, data in self._graph.edges(keys=True, data=True):
