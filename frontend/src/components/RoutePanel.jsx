@@ -6,6 +6,7 @@
  *   - "Compute Route" button
  *   - Computed route details (legs, duration, distance, cost)
  *   - Mode switch information for multi-modal routes
+ *   - Multimodal vehicle suggestions
  *   - Error messages
  *
  * Integration:
@@ -13,6 +14,8 @@
  *   - Triggers route computation via onCompute callback
  *   - Route result matches backend RouteResponse schema
  */
+
+import MultimodalSuggestions from './MultimodalSuggestions';
 
 const MODE_COLORS = {
   car:     '#22c55e',
@@ -300,6 +303,14 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
               <span>⚠</span>
               Avoided {routeResult.anomalies_avoided} anomaly-affected edge(s)
             </div>
+          )}
+
+          {/* Multimodal vehicle suggestions */}
+          {routeResult.multimodal_suggestions && routeResult.multimodal_suggestions.length > 0 && (
+            <MultimodalSuggestions 
+              suggestions={routeResult.multimodal_suggestions}
+              isLoading={false}
+            />
           )}
         </div>
       )}
