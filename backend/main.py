@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from database import engine, Base
 from routes import health, auth, route, anomaly, graph
+from routes.v2 import router as v2_router
 from services.graph_service import graph_service
 
 
