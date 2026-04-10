@@ -3,8 +3,9 @@ GoliTransit Backend — Application Entry Point
 ================================================
 This is the main FastAPI application file. It:
   1. Initializes the FastAPI app with CORS middleware
-  2. Mounts all route modules (/health, /route, /anomaly, /graph)
-  3. Triggers graph loading on startup via lifespan events
+  2. Creates database tables on startup
+  3. Mounts all route modules (/health, /auth, /route, /anomaly, /graph)
+  4. Triggers graph loading on startup via lifespan events
 
 All business logic lives in the `services/` layer — routes are thin
 wrappers that validate input, delegate to services, and return responses.
@@ -16,7 +17,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from routes import health, route, anomaly, graph
+from database import engine, Base
+from routes import health, auth, route, anomaly, graph
 from services.graph_service import graph_service
 
 
@@ -24,10 +26,15 @@ from services.graph_service import graph_service
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    On startup: load the OSM road graph into memory so all routing
-    requests can use it without re-downloading.
+    On startup: 
+      - Create database tables if they don't exist
+      - Load the OSM road graph into memory
     On shutdown: clean up resources.
     """
+    print("[startup] Creating database tables...")
+    Base.metadata.create_all(bind=engine)
+    print("[startup] Database tables created/verified")
+    
     print("[startup] Loading road graph...")
     graph_service.load_graph()
     print(f"[startup] Graph loaded — {graph_service.node_count()} nodes, {graph_service.edge_count()} edges")
@@ -55,6 +62,7 @@ app.add_middleware(
 # ─── Mount Routers ───────────────────────────────────────────────
 # Each router is defined in its own file under routes/
 app.include_router(health.router, tags=["Health"])
+app.include_router(auth.router, tags=["Authentication"])
 app.include_router(route.router, prefix="/route", tags=["Routing"])
 app.include_router(anomaly.router, prefix="/anomaly", tags=["Anomaly"])
 app.include_router(graph.router, prefix="/graph", tags=["Graph"])

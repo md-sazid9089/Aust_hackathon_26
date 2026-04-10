@@ -85,6 +85,21 @@
     "cors_origins": ["http://localhost:5173", "http://127.0.0.1:5173"]
   },
 
+  "database": {
+    "driver": "mysql+pymysql",
+    "user": "golitransit",
+    "password": "golitransit",
+    "host": "db",
+    "port": 3306,
+    "database": "golitransit"
+  },
+
+  "jwt": {
+    "secret_key": "your-secret-key-change-in-production",
+    "algorithm": "HS256",
+    "access_token_expire_minutes": 30
+  },
+
   "demo_scenarios": {
     "scenario_1_rush_hour": {
       "description": "Simulate morning rush hour with heavy congestion on highways",
