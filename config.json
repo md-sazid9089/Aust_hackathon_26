@@ -4,7 +4,10 @@
 
   "graph": {
     "osm_source": "osmnx",
-    "default_location": "Dhaka, Bangladesh",
+    "default_location": "Ahsanullah University of Science and Technology, Dhaka, Bangladesh",
+    "center_lat": 23.7639,
+    "center_lng": 90.4066,
+    "radius_m": 2000,
     "network_type": "all",
     "simplify": true,
     "cache_dir": "./data/osm_cache"
