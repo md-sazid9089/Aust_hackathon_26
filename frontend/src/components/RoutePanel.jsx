@@ -237,6 +237,40 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
             </div>
           )}
 
+          {/* Traffic jam chance */}
+          {routeResult.traffic_jam_prediction && (
+            <div style={{
+              padding: '10px 14px',
+              background: 'rgba(59,130,246,0.08)',
+              border: '1px solid rgba(59,130,246,0.25)',
+              borderRadius: 10,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+            }}>
+              <div style={{
+                color: '#93c5fd',
+                fontWeight: 800,
+                fontSize: 12,
+                letterSpacing: '0.02em',
+                fontFamily: 'Inter, system-ui, sans-serif',
+              }}>
+                Traffic Jam Chance: {routeResult.traffic_jam_prediction.route_jam_chance_pct}%
+              </div>
+              <div style={{
+                color: '#a3a3a3',
+                fontSize: 10,
+                fontFamily: 'JetBrains Mono, monospace',
+              }}>
+                Hour {String(routeResult.traffic_jam_prediction.hour_of_day).padStart(2, '0')}:00 |
+                Edges {routeResult.traffic_jam_prediction.edges_analyzed} |
+                Heavy {routeResult.traffic_jam_prediction.heavy_edges} |
+                Moderate {routeResult.traffic_jam_prediction.moderate_edges} |
+                Low {routeResult.traffic_jam_prediction.low_edges}
+              </div>
+            </div>
+          )}
+
           {/* Real multimodal recommendation output */}
           {Array.isArray(routeResult.multimodal_suggestions) && routeResult.multimodal_suggestions.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
