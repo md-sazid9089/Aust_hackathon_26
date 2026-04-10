@@ -12,7 +12,9 @@ Used by:
 
 from fastapi import APIRouter
 
+
 from services.graph_service import graph_service
+from db import check_db_connection
 
 router = APIRouter()
 
@@ -24,8 +26,9 @@ async def health_check():
     If the graph is not loaded, returns a degraded status.
     """
     graph_loaded = graph_service.is_loaded()
+    db_connected = check_db_connection()
     return {
-        "status": "healthy" if graph_loaded else "degraded",
+        "status": "healthy" if graph_loaded and db_connected else "degraded",
         "service": "GoliTransit API",
         "version": "0.1.0",
         "graph": {
@@ -33,4 +36,5 @@ async def health_check():
             "nodes": graph_service.node_count() if graph_loaded else 0,
             "edges": graph_service.edge_count() if graph_loaded else 0,
         },
+        "database": {"connected": db_connected},
     }
