@@ -16,7 +16,7 @@ const MODE_COLORS = {
   rickshaw: '#ec4899',
 };
 
-function RoutePanel({ origin, destination, routeResult, isLoading, error, onCompute, onClear }) {
+function RoutePanel({ origin, destination, routeResult, isLoading, error, onCompute, onComputeMultimodal, onClear }) {
   const hasPoints = origin && destination;
 
   return (
@@ -119,6 +119,28 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
         </button>
 
         <button
+          id="btn-compute-multimodal"
+          onClick={onComputeMultimodal}
+          disabled={!hasPoints || isLoading}
+          style={{
+            padding: '12px 10px',
+            borderRadius: 14,
+            border: '1.5px solid rgba(59,130,246,0.35)',
+            background: (!hasPoints || isLoading)
+              ? 'rgba(255,255,255,0.03)'
+              : 'rgba(59,130,246,0.12)',
+            color: (!hasPoints || isLoading) ? '#404040' : '#93c5fd',
+            fontWeight: 700,
+            fontSize: 11,
+            fontFamily: 'Inter, system-ui, sans-serif',
+            cursor: (!hasPoints || isLoading) ? 'not-allowed' : 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          Multimodal
+        </button>
+
+        <button
           id="btn-clear-route"
           onClick={onClear}
           style={{
@@ -212,6 +234,85 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
               fontFamily: 'Inter, system-ui, sans-serif',
             }}>
               {'\u26A0'} Avoided {routeResult.anomalies_avoided} anomaly-affected edge(s)
+            </div>
+          )}
+
+          {/* Real multimodal recommendation output */}
+          {Array.isArray(routeResult.multimodal_suggestions) && routeResult.multimodal_suggestions.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <SectionLabel text="Multimodal Suggestions" icon={'\u2728'} />
+              {routeResult.multimodal_suggestions.map((s, idx) => (
+                <div key={`${s.strategy}-${idx}`} style={{
+                  background: 'rgba(0,0,0,0.25)',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  borderRadius: 12,
+                  padding: '10px 12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: '#fff',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                      fontFamily: 'JetBrains Mono, monospace',
+                    }}>
+                      {s.strategy === 'shortest_distance' ? 'Shortest Distance' : 'Fastest Time'}
+                    </div>
+                    <div style={{
+                      fontSize: 10,
+                      color: '#a3a3a3',
+                      fontFamily: 'JetBrains Mono, monospace',
+                    }}>
+                      {formatDistance(s.total_distance_m)} | {formatDuration(s.total_duration_s)}
+                    </div>
+                  </div>
+
+                  {(s.segments || []).slice(0, 8).map((seg) => (
+                    <div key={`${s.strategy}-${seg.segment_index}`} style={{
+                      border: '1px solid rgba(255,255,255,0.04)',
+                      borderRadius: 8,
+                      padding: '7px 8px',
+                      background: 'rgba(255,255,255,0.015)',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+                        <span style={{ color: '#737373', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>
+                          Segment {seg.segment_index + 1} - {seg.road_type}
+                        </span>
+                        <span style={{ color: '#a3a3a3', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>
+                          {formatDistance(seg.distance_m)}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{
+                          color: MODE_COLORS[seg.recommended_vehicle] || '#22c55e',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          textTransform: 'capitalize',
+                        }}>
+                          Fastest: {seg.recommended_vehicle}
+                        </span>
+                        <span style={{ color: '#525252', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>
+                          {(seg.vehicle_options || [])
+                            .filter((v) => v.allowed)
+                            .slice(0, 3)
+                            .map((v) => `${v.vehicle}:${formatDuration(v.travel_time_s)}`)
+                            .join(' | ')}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {(s.segments || []).length > 8 && (
+                    <div style={{ color: '#525252', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>
+                      +{s.segments.length - 8} more segments
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
