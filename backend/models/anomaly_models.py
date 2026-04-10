@@ -9,16 +9,35 @@ Used by:
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
 
 from pydantic import BaseModel, Field
 
 
 class AnomalyLocation(BaseModel):
     """Location can be specified as lat/lng or as a graph edge ID."""
+
     lat: Optional[float] = Field(None, ge=-90, le=90)
     lng: Optional[float] = Field(None, ge=-180, le=180)
-    edge_id: Optional[str] = Field(None, description="Direct edge identifier in the graph")
+    edge_id: Optional[str] = Field(
+        None, description="Direct edge identifier in the graph"
+    )
+
+
+class AnomalyTarget(BaseModel):
+    type: Literal["edge", "bbox"] = "edge"
+    edge_ids: list[str] = Field(default_factory=list)
+    bbox: Optional[list[float]] = Field(
+        None,
+        description="[south, west, north, east]",
+        min_length=4,
+        max_length=4,
+    )
+
+
+class AnomalyEffects(BaseModel):
+    weight_multiplier: dict[str, float] = Field(default_factory=dict)
+    disable_modes: list[str] = Field(default_factory=list)
 
 
 class AnomalyReport(BaseModel):
@@ -31,11 +50,17 @@ class AnomalyReport(BaseModel):
       - high:     3.0x (major delay)
       - critical: effectively blocked (max weight)
     """
-    location: AnomalyLocation
-    severity: str = Field(
+
+    location: Optional[AnomalyLocation] = None
+    edge_ids: list[str] = Field(default_factory=list)
+    vehicle_types: list[str] = Field(default_factory=list)
+    target: Optional[AnomalyTarget] = None
+    effects: Optional[AnomalyEffects] = None
+    severity: float = Field(
         ...,
-        description="Severity level: 'low', 'medium', 'high', 'critical'",
-        examples=["medium"],
+        gt=0,
+        description="Weight multiplier to apply on matching edges and vehicle types",
+        examples=[5],
     )
     type: str = Field(
         ...,
@@ -47,13 +72,24 @@ class AnomalyReport(BaseModel):
         None,
         description="Estimated duration in minutes (defaults to config auto_expire_minutes)",
     )
+    ttl: Optional[int] = Field(
+        None,
+        description="TTL in seconds (optional). If provided, overrides duration_minutes.",
+    )
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
 
 
 class ActiveAnomaly(BaseModel):
     """An anomaly currently affecting the graph."""
+
     anomaly_id: str
-    location: AnomalyLocation
-    severity: str
+    location: Optional[AnomalyLocation] = None
+    edge_ids: list[str] = Field(default_factory=list)
+    vehicle_types: list[str] = Field(default_factory=list)
+    target: Optional[AnomalyTarget] = None
+    effects: Optional[AnomalyEffects] = None
+    severity: float
     type: str
     description: Optional[str] = None
     affected_edges: list[str] = Field(default_factory=list)
@@ -64,5 +100,6 @@ class ActiveAnomaly(BaseModel):
 
 class AnomalyListResponse(BaseModel):
     """Response for GET /anomaly — list of active anomalies."""
+
     anomalies: list[ActiveAnomaly]
     count: int

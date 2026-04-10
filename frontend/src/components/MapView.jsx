@@ -15,19 +15,21 @@ import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMapEvents, 
 import L from 'leaflet';
 
 const SEGMENT_MODE_COLORS = {
-  car: '#ef4444',      // red
+  car: '#3b82f6',      // blue
   bike: '#22c55e',     // green
-  rickshaw: '#facc15', // yellow
-  walk: '#f97316',     // orange
-  transit: '#3b82f6',  // blue (bus/transit)
+  rickshaw: '#f97316', // orange
+  walk: '#9ca3af',     // gray
+  bus: '#ef4444',      // red
+  transit: '#ef4444',  // red alias
 };
 
 const SINGLE_MODE_COLORS = {
-  car: '#ef4444',
+  car: '#3b82f6',
   bike: '#22c55e',
-  rickshaw: '#facc15',
-  walk: '#f97316',
-  transit: '#3b82f6',
+  rickshaw: '#f97316',
+  walk: '#9ca3af',
+  bus: '#ef4444',
+  transit: '#ef4444',
 };
 
 const originIcon = new L.DivIcon({
@@ -145,7 +147,22 @@ function MapFABControls({ defaultCenter, defaultZoom }) {
 
 // ─── Main MapView Component ───────────────────────────────────────
 
-function MapView({ origin, destination, routeResult, selectedMode, graphNodes, onMapClick, onOriginDrag, onDestinationDrag }) {
+function MapView({
+  origin,
+  destination,
+  routeResult,
+  selectedMode,
+  graphNodes,
+  graphEdges,
+  anomalyEdgeIds,
+  anomalies,
+  selectedAnomalyEdgeId,
+  selectedBBox,
+  bboxStart,
+  onMapClick,
+  onOriginDrag,
+  onDestinationDrag,
+}) {
   // Default center: Ahsanullah University of Science and Technology area
   const defaultCenter = [23.7639, 90.4066];
   const defaultZoom = 14;
@@ -203,6 +220,82 @@ function MapView({ origin, destination, routeResult, selectedMode, graphNodes, o
   );
 
   const nodeCoords = (graphNodes || []).map((node) => [node.lat, node.lng]);
+
+  const nodeLookup = useMemo(() => {
+    const map = new Map();
+    (graphNodes || []).forEach((n) => map.set(String(n.id), n));
+    return map;
+  }, [graphNodes]);
+
+  const anomalyPolylines = useMemo(() => {
+    if (!Array.isArray(graphEdges) || graphEdges.length === 0) {
+      return [];
+    }
+    const affected = new Set(anomalyEdgeIds || []);
+    const highlighted = [];
+
+    const anomalyByEdge = new Map();
+    (anomalies || []).forEach((a) => {
+      (a.edge_ids || a.affected_edges || []).forEach((eid) => {
+        if (!anomalyByEdge.has(eid)) {
+          anomalyByEdge.set(eid, []);
+        }
+        anomalyByEdge.get(eid).push(a);
+      });
+    });
+
+    graphEdges.forEach((edge, idx) => {
+      const edgeId = `${edge.source}->${edge.target}`;
+      if (!affected.has(edgeId) && edgeId !== selectedAnomalyEdgeId) {
+        return;
+      }
+
+      let positions = [];
+      if (Array.isArray(edge.geometry) && edge.geometry.length >= 2) {
+        positions = edge.geometry
+          .map((pt) => {
+            if (Array.isArray(pt) && pt.length >= 2) {
+              return [Number(pt[0]), Number(pt[1])];
+            }
+            return null;
+          })
+          .filter(Boolean);
+      }
+
+      if (positions.length < 2) {
+        const src = nodeLookup.get(String(edge.source));
+        const dst = nodeLookup.get(String(edge.target));
+        if (!src || !dst) {
+          return;
+        }
+        positions = [[src.lat, src.lng], [dst.lat, dst.lng]];
+      }
+
+      highlighted.push({
+        key: `anomaly-edge-${idx}`,
+        positions,
+        selected: edgeId === selectedAnomalyEdgeId,
+        edgeId,
+        anomalies: anomalyByEdge.get(edgeId) || [],
+      });
+    });
+
+    return highlighted;
+  }, [graphEdges, anomalyEdgeIds, selectedAnomalyEdgeId, nodeLookup, anomalies]);
+
+  const bboxPolyline = useMemo(() => {
+    if (!selectedBBox || selectedBBox.length !== 4) {
+      return null;
+    }
+    const [south, west, north, east] = selectedBBox;
+    return [
+      [south, west],
+      [south, east],
+      [north, east],
+      [north, west],
+      [south, west],
+    ];
+  }, [selectedBBox]);
 
   return (
     <MapContainer
@@ -278,17 +371,69 @@ function MapView({ origin, destination, routeResult, selectedMode, graphNodes, o
         />
       ) : null}
 
+      {anomalyPolylines.map((line) => (
+        <Polyline
+          key={line.key}
+          positions={line.positions}
+          pathOptions={{
+            color: line.selected ? '#f97316' : '#ef4444',
+            weight: line.selected ? 7 : 5,
+            opacity: line.selected ? 0.95 : 0.75,
+            lineCap: 'round',
+            lineJoin: 'round',
+            dashArray: line.selected ? null : '8 6',
+          }}
+        >
+          <Popup>
+            <div style={{ minWidth: 200 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>Affected Edge</div>
+              <div style={{ fontSize: 12, marginBottom: 6 }}>{line.edgeId}</div>
+              {line.anomalies.slice(0, 3).map((a) => (
+                <div key={a.anomaly_id} style={{ fontSize: 12, marginBottom: 4 }}>
+                  {a.type}: x{Number(a.severity || a.weight_multiplier || 1).toFixed(1)}
+                </div>
+              ))}
+            </div>
+          </Popup>
+        </Polyline>
+      ))}
+
+      {bboxPolyline && (
+        <Polyline
+          positions={bboxPolyline}
+          pathOptions={{
+            color: '#f59e0b',
+            weight: 3,
+            opacity: 0.9,
+            dashArray: '8 6',
+          }}
+        />
+      )}
+
+      {bboxStart && (
+        <CircleMarker
+          center={[bboxStart.lat, bboxStart.lng]}
+          radius={6}
+          pathOptions={{
+            color: '#f59e0b',
+            weight: 2,
+            fillColor: '#fbbf24',
+            fillOpacity: 0.9,
+          }}
+        />
+      )}
+
       {/* ─── Graph node dots (all road junction nodes) ───── */}
       {nodeCoords.map((position, idx) => (
         <CircleMarker
           key={`graph-node-${idx}`}
           center={position}
-          radius={1.8}
+          radius={2.6}
           pathOptions={{
-            color: '#60a5fa',
+            color: '#93c5fd',
             weight: 0,
-            fillColor: '#60a5fa',
-            fillOpacity: 0.8,
+            fillColor: '#93c5fd',
+            fillOpacity: 0.95,
           }}
         />
       ))}

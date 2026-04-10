@@ -46,7 +46,8 @@ function AnomalyAlert({ anomalies }) {
 
       {/* Anomaly cards */}
       {anomalies.map((anomaly) => {
-        const tok = getSeverityTokens(anomaly.severity);
+        const sevLabel = severityLabel(anomaly.severity);
+        const tok = getSeverityTokens(sevLabel);
         return (
           <div
             key={anomaly.anomaly_id}
@@ -78,7 +79,7 @@ function AnomalyAlert({ anomalies }) {
                 <span style={{ fontSize: 14 }}>{getTypeIcon(anomaly.type)}</span>
                 <span style={{ textTransform: 'capitalize' }}>{anomaly.type}</span>
               </span>
-              <SeverityBadge severity={anomaly.severity} />
+              <SeverityBadge severity={sevLabel} />
             </div>
 
             {/* Description */}
@@ -97,7 +98,7 @@ function AnomalyAlert({ anomalies }) {
               fontSize: 10, color: '#525252',
               fontFamily: 'JetBrains Mono, monospace',
             }}>
-              <span>{anomaly.affected_edges?.length || 0} edge(s) affected</span>
+              <span>{(anomaly.edge_ids?.length || anomaly.affected_edges?.length || 0)} edge(s) affected</span>
               <span style={{ color: tok.accent }}>{anomaly.weight_multiplier}× weight</span>
             </div>
           </div>
@@ -145,6 +146,15 @@ function getSeverityTokens(severity) {
     high:     { bg: 'rgba(249,115,22,0.06)', border: 'rgba(249,115,22,0.18)', text: '#fdba74', accent: '#f97316' },
     critical: { bg: 'rgba(239,68,68,0.07)',  border: 'rgba(239,68,68,0.20)', text: '#fca5a5', accent: '#ef4444' },
   })[severity] || { bg: 'rgba(56,189,248,0.05)', border: 'rgba(56,189,248,0.16)', text: '#7dd3fc', accent: '#38bdf8' };
+}
+
+function severityLabel(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'low';
+  if (n >= 8) return 'critical';
+  if (n >= 5) return 'high';
+  if (n >= 3) return 'medium';
+  return 'low';
 }
 
 function getTypeIcon(type) {

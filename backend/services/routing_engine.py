@@ -25,6 +25,7 @@ from models.route_models import (
 from services.graph_service import graph_service
 from services.ml_integration import ml_integration
 from services.multimodal_dijkstra import multi_modal_dijkstra_with_coords
+from services.anomaly_service import anomaly_service
 
 
 class RoutingEngine:
@@ -37,8 +38,21 @@ class RoutingEngine:
         self._max_transfers = settings.multimodal_max_transfers
         self._transfer_radius = settings.transfer_radius_meters
 
+    def _normalize_mode(self, mode: str) -> str:
+        if mode == "bus":
+            return "transit"
+        return mode
+
+    def _display_mode(self, mode: str) -> str:
+        if mode == "transit":
+            return "bus"
+        return mode
+
     async def compute(self, request: RouteRequest) -> RouteResponse:
         await self._refresh_ml_weights()
+        anomaly_service.sync_active_effects()
+
+        request.modes = [self._normalize_mode(m) for m in request.modes]
 
         if len(request.modes) == 1:
             legs, switches, anomalies_avoided = await self._single_modal(
@@ -75,8 +89,30 @@ class RoutingEngine:
         )
 
         return RouteResponse(
-            legs=legs,
-            mode_switches=switches,
+            legs=[
+                RouteLeg(
+                    mode=self._display_mode(leg.mode),
+                    geometry=leg.geometry,
+                    distance_m=leg.distance_m,
+                    duration_s=leg.duration_s,
+                    cost=leg.cost,
+                    instructions=[
+                        instr.replace(" transit ", " bus ").replace("transit", "bus")
+                        for instr in leg.instructions
+                    ],
+                )
+                for leg in legs
+            ],
+            mode_switches=[
+                ModeSwitch(
+                    from_mode=self._display_mode(sw.from_mode),
+                    to_mode=self._display_mode(sw.to_mode),
+                    location=sw.location,
+                    penalty_time_s=sw.penalty_time_s,
+                    penalty_cost=sw.penalty_cost,
+                )
+                for sw in switches
+            ],
             total_distance_m=total_dist,
             total_duration_s=total_dur,
             total_cost=total_cost,
@@ -141,31 +177,6 @@ class RoutingEngine:
             return [leg], [], 0
 
         path = self._safe_shortest_path(graph, origin_node, dest_node, weight_fn)
-        if path is None:
-            # If the mode-specific subgraph is disconnected, fall back to the full graph.
-            # This keeps the route visible instead of failing with a no-path error.
-            full_graph = graph_service.get_graph()
-            if full_graph is None or full_graph.number_of_nodes() == 0:
-                raise ValueError(
-                    f"No path found between origin and destination for mode '{mode}'."
-                )
-
-            full_origin = graph_service.get_nearest_node_in_graph(
-                full_graph, origin.lat, origin.lng
-            )
-            full_dest = graph_service.get_nearest_node_in_graph(
-                full_graph, destination.lat, destination.lng
-            )
-            if full_origin is None or full_dest is None:
-                raise ValueError(
-                    f"No path found between origin and destination for mode '{mode}'."
-                )
-
-            path = self._safe_shortest_path(full_graph, full_origin, full_dest, weight_fn)
-            graph = full_graph
-            origin_node = full_origin
-            dest_node = full_dest
-
         if path is None:
             raise ValueError(
                 f"No path found between origin and destination for mode '{mode}'."
@@ -492,7 +503,7 @@ class RoutingEngine:
                             segment_index=idx,
                             distance_m=distance_m,
                             road_type=road_type,
-                            recommended_vehicle=mode,
+                            recommended_vehicle=self._display_mode(mode),
                             geometry=edge_geometry,
                             vehicle_options=options,
                         )
@@ -539,14 +550,18 @@ class RoutingEngine:
                 rec_time = best.travel_time_s
             else:
                 rec_mode = "walk"
-                rec_time = float(edge_data.get("walk_travel_time") or edge_data.get("travel_time") or 0.0)
+                rec_time = float(
+                    edge_data.get("walk_travel_time")
+                    or edge_data.get("travel_time")
+                    or 0.0
+                )
 
             segments.append(
                 SegmentSuggestion(
                     segment_index=idx,
                     distance_m=distance_m,
                     road_type=road_type,
-                    recommended_vehicle=rec_mode,
+                    recommended_vehicle=self._display_mode(rec_mode),
                     geometry=edge_geometry,
                     vehicle_options=options,
                 )
@@ -574,9 +589,7 @@ class RoutingEngine:
         data = graph.get_edge_data(u, v) or {}
         if not data:
             return {}
-        allowed = [
-            e for e in data.values() if bool(e.get(f"{mode}_allowed", False))
-        ]
+        allowed = [e for e in data.values() if bool(e.get(f"{mode}_allowed", False))]
         pool = allowed or list(data.values())
         return min(
             pool,
@@ -601,7 +614,13 @@ class RoutingEngine:
                 or edge_data.get("travel_time")
                 or 0.0
             )
-            options.append(VehicleOption(vehicle=mode, travel_time_s=t, allowed=allowed))
+            options.append(
+                VehicleOption(
+                    vehicle=self._display_mode(mode),
+                    travel_time_s=t,
+                    allowed=allowed,
+                )
+            )
         options.sort(key=lambda o: o.travel_time_s)
         return options
 

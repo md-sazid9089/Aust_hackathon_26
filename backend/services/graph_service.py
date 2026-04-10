@@ -31,9 +31,12 @@ def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 
 def _project_point_to_segment(
-    p_lat: float, p_lng: float,
-    a_lat: float, a_lng: float,
-    b_lat: float, b_lng: float,
+    p_lat: float,
+    p_lng: float,
+    a_lat: float,
+    a_lng: float,
+    b_lat: float,
+    b_lng: float,
 ) -> tuple[float, float, float]:
     """
     Project point P onto line segment A→B.
@@ -113,6 +116,21 @@ def _fallback_speed_for_road(road_type: str) -> float:
     if road_type in small:
         return 20.0
     return 30.0
+
+
+def _is_main_road(road_type: str) -> bool:
+    return road_type in {
+        "motorway",
+        "motorway_link",
+        "trunk",
+        "trunk_link",
+        "primary",
+        "primary_link",
+        "secondary",
+        "secondary_link",
+        "tertiary",
+        "tertiary_link",
+    }
 
 
 class GraphService:
@@ -242,11 +260,36 @@ class GraphService:
                 data["transit_allowed"] = False
                 data["car_allowed"] = True
 
+            # Bike must be allowed exactly where rickshaw is allowed.
+            data["bike_allowed"] = bool(data.get("rickshaw_allowed", False))
+
+            # Bus (transit) should only run on main roads.
+            if not _is_main_road(road_type):
+                data["transit_allowed"] = False
+
+            # Transport refinement timing model:
+            # bike faster than rickshaw, slightly faster than car; bus slower than car.
+            car_base = float(
+                data.get("car_travel_time", base_travel_time_s) or base_travel_time_s
+            )
+            bike_time = max(car_base * 0.90, 0.01)
+            rickshaw_time = max(bike_time * 1.35, 0.01)
+            transit_time = max(car_base * 1.30, 0.01)
+
+            data["car_travel_time"] = car_base
+            data["bike_travel_time"] = bike_time
+            data["rickshaw_travel_time"] = rickshaw_time
+            data["transit_travel_time"] = transit_time
+
             # ── Build spec-compatible weights & constraints dicts ─
             data["base_weight"] = length_m
             data["weights"] = {}
             data["constraints"] = {}
             for mode in settings.vehicle_types:
+                data[f"{mode}_base_travel_time"] = float(
+                    data.get(f"{mode}_travel_time", base_travel_time_s)
+                )
+                data[f"{mode}_base_allowed"] = bool(data.get(f"{mode}_allowed", False))
                 data["weights"][mode] = float(
                     data.get(f"{mode}_travel_time", base_travel_time_s)
                 )
@@ -332,7 +375,9 @@ class GraphService:
 
         return best_node
 
-    def get_k_nearest_nodes_in_graph(self, graph: nx.MultiDiGraph, lat: float, lng: float, k: int = 8):
+    def get_k_nearest_nodes_in_graph(
+        self, graph: nx.MultiDiGraph, lat: float, lng: float, k: int = 8
+    ):
         """Return k nearest nodes inside the provided graph, sorted by distance."""
         if graph is None or graph.number_of_nodes() == 0:
             return []
@@ -426,8 +471,12 @@ class GraphService:
         # Return the closer endpoint as the snap node
         u_data = self._graph.nodes.get(u, {})
         v_data = self._graph.nodes.get(v, {})
-        dist_u = _haversine_m(lat, lng, float(u_data.get("y", 0)), float(u_data.get("x", 0)))
-        dist_v = _haversine_m(lat, lng, float(v_data.get("y", 0)), float(v_data.get("x", 0)))
+        dist_u = _haversine_m(
+            lat, lng, float(u_data.get("y", 0)), float(u_data.get("x", 0))
+        )
+        dist_v = _haversine_m(
+            lat, lng, float(v_data.get("y", 0)), float(v_data.get("x", 0))
+        )
         snap_node = u if dist_u <= dist_v else v
 
         return {
@@ -508,6 +557,19 @@ class GraphService:
         nodes: list[GraphNode] = []
         edges: list[GraphEdge] = []
         anomaly_affected_edges: list[str] = []
+        anomaly_ids_by_edge: dict[str, list[str]] = {}
+
+        if include_edges:
+            try:
+                from services.anomaly_service import anomaly_service
+
+                for anomaly in anomaly_service._active.values():
+                    for edge_id in anomaly.edge_ids:
+                        anomaly_ids_by_edge.setdefault(edge_id, []).append(
+                            anomaly.anomaly_id
+                        )
+            except Exception:
+                anomaly_ids_by_edge = {}
 
         south, west, north, east = bbox or (None, None, None, None)
 
@@ -541,6 +603,15 @@ class GraphService:
                 if not math.isclose(multiplier, 1.0):
                     anomaly_affected_edges.append(edge_id)
 
+                geometry_points: list[list[float]] = []
+                edge_geom = data.get("geometry")
+                if edge_geom is not None and hasattr(edge_geom, "coords"):
+                    for x, y in list(edge_geom.coords):
+                        geometry_points.append([float(y), float(x)])
+
+                if len(geometry_points) < 2:
+                    geometry_points = [[u_lat, u_lng], [v_lat, v_lng]]
+
                 edges.append(
                     GraphEdge(
                         source=str(u),
@@ -556,6 +627,16 @@ class GraphService:
                         ),
                         anomaly_multiplier=multiplier,
                         ml_predicted=bool(data.get("ml_predicted") or False),
+                        geometry=geometry_points,
+                        weights={
+                            mode: float(data.get(f"{mode}_travel_time") or 0.0)
+                            for mode in settings.vehicle_types.keys()
+                        },
+                        allowed_modes={
+                            mode: bool(data.get(f"{mode}_allowed", False))
+                            for mode in settings.vehicle_types.keys()
+                        },
+                        active_anomalies=anomaly_ids_by_edge.get(edge_id, []),
                     )
                 )
 

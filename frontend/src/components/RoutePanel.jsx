@@ -9,11 +9,12 @@
  */
 
 const MODE_COLORS = {
-  car:      '#22c55e',
+  car:      '#3b82f6',
   bike:     '#34d399',
-  walk:     '#f59e0b',
-  transit:  '#8b5cf6',
-  rickshaw: '#ec4899',
+  walk:     '#9ca3af',
+  transit:  '#ef4444',
+  bus:      '#ef4444',
+  rickshaw: '#f97316',
 };
 
 function RoutePanel({ origin, destination, routeResult, isLoading, error, onCompute, onComputeMultimodal, onClear }) {
@@ -293,13 +294,13 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
                           fontWeight: 700,
                           textTransform: 'capitalize',
                         }}>
-                          Fastest: {seg.recommended_vehicle}
+                          Fastest: {getModeLabel(seg.recommended_vehicle)}
                         </span>
                         <span style={{ color: '#525252', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>
                           {(seg.vehicle_options || [])
                             .filter((v) => v.allowed)
                             .slice(0, 3)
-                            .map((v) => `${v.vehicle}:${formatDuration(v.travel_time_s)}`)
+                            .map((v) => `${getModeLabel(v.vehicle)}:${formatDuration(v.travel_time_s)}`)
                             .join(' | ')}
                         </span>
                       </div>
@@ -414,7 +415,7 @@ function LegCard({ leg, index, totalLegs }) {
             fontFamily: 'Inter, system-ui, sans-serif',
             letterSpacing: '-0.01em',
           }}>
-            {leg.mode}
+            {getModeLabel(leg.mode)}
           </span>
         </span>
         <span style={{
@@ -520,7 +521,7 @@ function LegCard({ leg, index, totalLegs }) {
             color: accent,
             fontFamily: 'JetBrains Mono, monospace',
           }}>
-            Fastest: {leg.mode}
+            Fastest: {getModeLabel(leg.mode)}
           </span>
           <span style={{
             fontSize: 10, color: '#525252',
@@ -596,8 +597,20 @@ function getModeEmoji(mode) {
     bike: '\u{1F6B2}',
     walk: '\u{1F6B6}',
     transit: '\u{1F68C}',
+    bus: '\u{1F68C}',
     rickshaw: '\u{1F6FA}',
   })[mode] || '\u{1F4CD}';
+}
+
+function getModeLabel(mode) {
+  return ({
+    car: 'Car',
+    bike: 'Bike',
+    walk: 'Walk',
+    transit: 'Bus',
+    bus: 'Bus',
+    rickshaw: 'Rickshaw',
+  })[mode] || mode;
 }
 
 function formatDistance(meters) {

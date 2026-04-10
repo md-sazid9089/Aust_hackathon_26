@@ -10,7 +10,7 @@ const AVAILABLE_MODES = [
   { id: 'car',      label: 'Car',      icon: '\u{1F697}' },
   { id: 'bike',     label: 'Bike',     icon: '\u{1F6B2}' },
   { id: 'walk',     label: 'Walk',     icon: '\u{1F6B6}' },
-  { id: 'transit',  label: 'Transit',  icon: '\u{1F68C}' },
+  { id: 'transit',  label: 'Bus',      icon: '\u{1F68C}' },
   { id: 'rickshaw', label: 'Rickshaw', icon: '\u{1F6FA}' },
 ];
 

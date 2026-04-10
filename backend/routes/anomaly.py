@@ -27,7 +27,7 @@ async def report_anomaly(report: AnomalyReport):
 
     Body:
       - location: { lat, lng } or edge_id
-      - severity: "low" | "medium" | "high" | "critical"
+      - severity: numeric multiplier (e.g. 5)
       - type: "accident" | "closure" | "congestion" | "weather" | "construction"
       - description: optional human-readable description
       - duration_minutes: estimated duration (default: from config auto_expire)
@@ -40,7 +40,16 @@ async def report_anomaly(report: AnomalyReport):
     """
     try:
         anomaly_id = await anomaly_service.ingest(report)
-        return {"anomaly_id": anomaly_id, "status": "accepted"}
+        active = await anomaly_service.get_active()
+        created = next((a for a in active if a.anomaly_id == anomaly_id), None)
+        return {
+            "anomaly_id": anomaly_id,
+            "status": "accepted",
+            "affected_edges": len(created.edge_ids) if created else 0,
+            "edge_ids": created.edge_ids if created else [],
+            "vehicle_types": created.vehicle_types if created else [],
+            "severity": created.severity if created else report.severity,
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -53,3 +62,9 @@ async def list_anomalies():
     """
     active = await anomaly_service.get_active()
     return AnomalyListResponse(anomalies=active, count=len(active))
+
+
+@router.delete("")
+async def clear_anomalies():
+    cleared = await anomaly_service.clear_all()
+    return {"status": "cleared", "count": cleared}

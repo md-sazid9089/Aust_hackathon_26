@@ -93,6 +93,11 @@ export async function reportAnomaly(report) {
   return response.data;
 }
 
+export async function clearAnomalies() {
+  const response = await apiClient.delete('/anomaly');
+  return response.data;
+}
+
 // ─── Authentication Endpoints ────────────────────────────────────
 
 /**
