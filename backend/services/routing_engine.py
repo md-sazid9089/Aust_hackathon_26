@@ -247,7 +247,11 @@ class RoutingEngine:
         alternatives = await self._compute_alternatives(request, num_alts)
 
         multimodal_suggestions = (
-            self._compute_multimodal_suggestions(request.origin, request.destination)
+            self._compute_multimodal_suggestions(
+                request.origin,
+                request.destination,
+                fallback_legs=legs,
+            )
             if bool(getattr(request, "include_multimodal", False))
             else []
         )
@@ -325,9 +329,14 @@ class RoutingEngine:
             leg = self._build_synthetic_leg(mode, origin, destination)
             return [leg], [], 0
 
-        graph = graph_service.get_subgraph_for_mode(mode)
+        mode_graph = graph_service.get_subgraph_for_mode(mode)
+        full_graph = graph_service.get_graph()
+        graph = mode_graph
         if graph is None or graph.number_of_nodes() == 0:
-            # No graph data for this mode - return synthetic route
+            # If mode-specific graph is empty/disconnected, fall back to full road graph
+            # so single-mode still follows realistic roads instead of a straight line.
+            graph = full_graph
+        if graph is None or graph.number_of_nodes() == 0:
             leg = self._build_synthetic_leg(mode, origin, destination)
             return [leg], [], 0
 
@@ -389,6 +398,37 @@ class RoutingEngine:
         if best_path is None:
             routing_graph = graph.to_undirected(as_view=True)
             best_pair, best_path = _find_best_path(routing_graph, max_origins=3)
+
+        # Secondary fallback: if mode graph cannot connect endpoints, retry on full graph
+        # before returning synthetic straight-line route.
+        if (
+            best_path is None
+            and mode_graph is not None
+            and mode_graph.number_of_nodes() > 0
+            and full_graph is not None
+            and full_graph.number_of_nodes() > 0
+            and full_graph is not mode_graph
+        ):
+            graph = full_graph
+            if origin_candidates_hint:
+                origin_candidates = [n for n in origin_candidates_hint if n in graph]
+            else:
+                origin_candidates = graph_service.get_k_nearest_nodes_in_graph(
+                    graph, origin.lat, origin.lng, k=8
+                )
+
+            if destination_candidates_hint:
+                dest_candidates = [n for n in destination_candidates_hint if n in graph]
+            else:
+                dest_candidates = graph_service.get_k_nearest_nodes_in_graph(
+                    graph, destination.lat, destination.lng, k=8
+                )
+
+            routing_graph = graph
+            best_pair, best_path = _find_best_path(routing_graph, max_origins=2)
+            if best_path is None:
+                routing_graph = graph.to_undirected(as_view=True)
+                best_pair, best_path = _find_best_path(routing_graph, max_origins=3)
 
         if best_path is None:
             # If the points are essentially colocated, return a zero-length leg.
@@ -536,17 +576,12 @@ class RoutingEngine:
                         switch_penalty=switch_penalty,
                     )
                     if result and result.get("path"):
-                        built = self._build_multimodal_from_state_path(
+                        return self._build_multimodal_from_state_path(
                             graph=graph,
                             origin=origin,
                             destination=destination,
                             path_steps=result["path"],
                         )
-                        built_legs, _built_switches, _built_avoided = built
-                        requested_modes = [self._normalize_mode(m) for m in modes]
-                        built_modes = [leg.mode for leg in built_legs]
-                        if built_modes == requested_modes:
-                            return built
                 except Exception:
                     pass
 
@@ -889,25 +924,132 @@ class RoutingEngine:
         del request, num_alternatives
         return []
 
+    def _build_multimodal_suggestions_from_route_legs(
+        self,
+        route_legs: list[RouteLeg],
+    ) -> list[MultimodalSuggestion]:
+        graph = graph_service.get_graph()
+        if not route_legs:
+            return []
+
+        segments: list[SegmentSuggestion] = []
+        total_distance_m = 0.0
+        total_duration_s = 0.0
+
+        for leg in route_legs:
+            traffic_edges = list(leg.traffic_edges or [])
+
+            # If edge-level references are unavailable, keep the leg as one segment.
+            if not traffic_edges or graph is None:
+                mode_name = self._display_mode(str(leg.mode or "walk"))
+                segments.append(
+                    SegmentSuggestion(
+                        segment_index=len(segments),
+                        distance_m=float(leg.distance_m or 0.0),
+                        road_type="mixed",
+                        recommended_vehicle=mode_name,
+                        geometry=list(leg.geometry or []),
+                        vehicle_options=[
+                            VehicleOption(
+                                vehicle=mode_name,
+                                travel_time_s=float(leg.duration_s or 0.0),
+                                allowed=True,
+                            )
+                        ],
+                    )
+                )
+                total_distance_m += float(leg.distance_m or 0.0)
+                total_duration_s += float(leg.duration_s or 0.0)
+                continue
+
+            for t_edge in traffic_edges:
+                edge_ref = self._parse_edge_id(t_edge.edge_id)
+                if edge_ref is None:
+                    continue
+
+                u, v, edge_key = edge_ref
+                edge_data_all = graph.get_edge_data(u, v) or {}
+                if not edge_data_all:
+                    continue
+
+                selected = edge_data_all.get(edge_key)
+                if selected is None:
+                    selected = next(iter(edge_data_all.values()))
+                edge_data = dict(selected)
+                edge_data["_key"] = edge_key
+
+                preferred_mode = self._select_preferred_mode_by_hierarchy(edge_data)
+                distance_m = float(edge_data.get("length") or t_edge.length_m or 0.0)
+                duration_s = float(
+                    edge_data.get(f"{preferred_mode}_travel_time")
+                    or edge_data.get("travel_time")
+                    or 0.0
+                )
+
+                segments.append(
+                    SegmentSuggestion(
+                        segment_index=len(segments),
+                        distance_m=distance_m,
+                        road_type=self._road_type(edge_data),
+                        recommended_vehicle=self._display_mode(preferred_mode),
+                        geometry=self._edge_geometry_points(graph, u, v, edge_data),
+                        vehicle_options=self._vehicle_options_for_edge(edge_data),
+                    )
+                )
+                total_distance_m += distance_m
+                total_duration_s += duration_s
+
+        if not segments:
+            return []
+
+        return [
+            MultimodalSuggestion(
+                strategy="shortest_distance",
+                total_distance_m=total_distance_m,
+                total_duration_s=total_duration_s,
+                segments=segments,
+            )
+        ]
+
+    def _select_preferred_mode_by_hierarchy(self, edge_data: dict) -> str:
+        # Required hierarchy:
+        # Bus > Car > Bike > Rickshaw > Walk
+        for mode in ("transit", "car", "bike", "rickshaw", "walk"):
+            if bool(edge_data.get(f"{mode}_allowed", False)):
+                return mode
+        return "walk"
+
+    def _parse_edge_id(self, edge_id: str):
+        try:
+            uv, key = str(edge_id).split(":", 1)
+            u, v = uv.split("->", 1)
+            return int(u), int(v), int(key)
+        except Exception:
+            return None
+
     def _compute_multimodal_suggestions(
-        self, origin: LatLng, destination: LatLng
+        self,
+        origin: LatLng,
+        destination: LatLng,
+        fallback_legs: list[RouteLeg] | None = None,
     ) -> list[MultimodalSuggestion]:
         graph = graph_service.get_graph()
         if graph is None or graph.number_of_nodes() == 0:
-            return []
+            return self._fallback_multimodal_suggestions_from_legs(fallback_legs)
 
         origin_node = graph_service.get_nearest_node(origin.lat, origin.lng)
         dest_node = graph_service.get_nearest_node(destination.lat, destination.lng)
         if origin_node is None or dest_node is None:
-            return []
+            return self._fallback_multimodal_suggestions_from_legs(fallback_legs)
 
         modes = list(settings.vehicle_types.keys())
         if not modes:
-            return []
+            return self._fallback_multimodal_suggestions_from_legs(fallback_legs)
 
         suggestions: list[MultimodalSuggestion] = []
 
-        # 1) Distance-optimal path, then best vehicle for each segment.
+        # Build exactly one suggestion from the distance-optimal route.
+        # Each segment picks the fastest allowed vehicle on that same path.
         try:
             dist_path = nx.shortest_path(
                 graph,
@@ -928,66 +1070,57 @@ class RoutingEngine:
         except Exception:
             pass
 
-        # 2) Time-optimal path using (node, mode) state-space Dijkstra.
-        try:
-            switch_penalty = float(
-                settings.mode_switch_penalties.get("default_penalty_seconds", 5.0)
-            )
-            time_result = multi_modal_dijkstra_with_coords(
-                graph=graph,
-                start=origin_node,
-                end=dest_node,
-                allowed_modes=modes,
-                switch_penalty=switch_penalty,
-            )
-            if time_result and time_result.get("path"):
-                segments: list[SegmentSuggestion] = []
-                total_distance_m = 0.0
-                total_duration_s = 0.0
-                for idx, step in enumerate(time_result["path"]):
-                    u = step["from"]
-                    v = step["to"]
-                    mode = step.get("mode") or "walk"
-                    edge_data = self._best_edge_for_mode(graph, u, v, mode)
-                    if not edge_data:
-                        continue
+        if suggestions:
+            return suggestions
 
-                    distance_m = float(edge_data.get("length") or 0.0)
-                    road_type = self._road_type(edge_data)
-                    edge_geometry = self._edge_geometry_points(graph, u, v, edge_data)
-                    options = self._vehicle_options_for_edge(edge_data)
-                    seg_time = float(
-                        edge_data.get(f"{mode}_travel_time")
-                        or edge_data.get("travel_time")
-                        or 0.0
-                    )
+        return self._fallback_multimodal_suggestions_from_legs(fallback_legs)
 
-                    segments.append(
-                        SegmentSuggestion(
-                            segment_index=idx,
-                            distance_m=distance_m,
-                            road_type=road_type,
-                            recommended_vehicle=self._display_mode(mode),
-                            geometry=edge_geometry,
-                            vehicle_options=options,
+    def _fallback_multimodal_suggestions_from_legs(
+        self,
+        fallback_legs: list[RouteLeg] | None,
+    ) -> list[MultimodalSuggestion]:
+        if not fallback_legs:
+            return []
+
+        segments: list[SegmentSuggestion] = []
+        total_distance_m = 0.0
+        total_duration_s = 0.0
+
+        for idx, leg in enumerate(fallback_legs):
+            road_type = "mixed"
+            if leg.traffic_edges:
+                road_type = str(leg.traffic_edges[0].road_type or "mixed")
+
+            segments.append(
+                SegmentSuggestion(
+                    segment_index=idx,
+                    distance_m=float(leg.distance_m or 0.0),
+                    road_type=road_type,
+                    recommended_vehicle=self._display_mode(str(leg.mode or "walk")),
+                    geometry=list(leg.geometry or []),
+                    vehicle_options=[
+                        VehicleOption(
+                            vehicle=self._display_mode(str(leg.mode or "walk")),
+                            travel_time_s=float(leg.duration_s or 0.0),
+                            allowed=True,
                         )
-                    )
-                    total_distance_m += distance_m
-                    total_duration_s += seg_time
+                    ],
+                )
+            )
+            total_distance_m += float(leg.distance_m or 0.0)
+            total_duration_s += float(leg.duration_s or 0.0)
 
-                if segments:
-                    suggestions.append(
-                        MultimodalSuggestion(
-                            strategy="fastest_time",
-                            total_distance_m=total_distance_m,
-                            total_duration_s=total_duration_s,
-                            segments=segments,
-                        )
-                    )
-        except Exception:
-            pass
+        if not segments:
+            return []
 
-        return suggestions
+        return [
+            MultimodalSuggestion(
+                strategy="fastest_time",
+                total_distance_m=total_distance_m,
+                total_duration_s=total_duration_s,
+                segments=segments,
+            )
+        ]
 
     def _build_suggestion_from_node_path(
         self, graph: nx.MultiDiGraph, node_path: list, strategy: str
