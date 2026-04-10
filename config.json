@@ -4,7 +4,10 @@
 
   "graph": {
     "osm_source": "osmnx",
-    "default_location": "Dhaka, Bangladesh",
+    "default_location": "Ahsanullah University of Science and Technology, Dhaka, Bangladesh",
+    "center_lat": 23.7639,
+    "center_lng": 90.4066,
+    "radius_m": 2000,
     "network_type": "all",
     "simplify": true,
     "cache_dir": "./data/osm_cache"
@@ -23,9 +26,15 @@
       "fuel_cost_per_km": 0.0,
       "co2_grams_per_km": 0
     },
+    "rickshaw": {
+      "default_speed_kmh": 15,
+      "allowed_road_types": ["secondary", "tertiary", "residential", "service", "unclassified", "living_street", "path"],
+      "fuel_cost_per_km": 0.03,
+      "co2_grams_per_km": 0
+    },
     "walk": {
       "default_speed_kmh": 5,
-      "allowed_road_types": ["footway", "path", "residential", "pedestrian", "steps"],
+      "allowed_road_types": ["footway", "path", "residential", "pedestrian", "steps", "service", "tertiary", "secondary", "living_street", "unclassified"],
       "fuel_cost_per_km": 0.0,
       "co2_grams_per_km": 0
     },
@@ -38,12 +47,19 @@
   },
 
   "mode_switch_penalties": {
+    "default_penalty_seconds": 5,
     "car_to_walk": { "time_seconds": 120, "cost_units": 0.5 },
+    "car_to_rickshaw": { "time_seconds": 90, "cost_units": 0.3 },
     "car_to_transit": { "time_seconds": 300, "cost_units": 1.0 },
+    "rickshaw_to_walk": { "time_seconds": 30, "cost_units": 0.1 },
+    "rickshaw_to_car": { "time_seconds": 90, "cost_units": 0.3 },
+    "walk_to_rickshaw": { "time_seconds": 30, "cost_units": 0.1 },
     "walk_to_transit": { "time_seconds": 60, "cost_units": 0.2 },
+    "walk_to_car": { "time_seconds": 120, "cost_units": 0.5 },
     "bike_to_transit": { "time_seconds": 180, "cost_units": 0.8 },
     "transit_to_walk": { "time_seconds": 60, "cost_units": 0.2 },
     "transit_to_car": { "time_seconds": 300, "cost_units": 1.0 },
+    "transit_to_rickshaw": { "time_seconds": 60, "cost_units": 0.2 },
     "walk_to_bike": { "time_seconds": 90, "cost_units": 0.3 },
     "bike_to_walk": { "time_seconds": 60, "cost_units": 0.1 }
   },

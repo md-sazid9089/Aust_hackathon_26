@@ -59,6 +59,9 @@ class Settings:
     osm_location: str = _raw.get("graph", {}).get("default_location", "San Francisco, California, USA")
     network_type: str = _raw.get("graph", {}).get("network_type", "all")
     simplify_graph: bool = _raw.get("graph", {}).get("simplify", True)
+    graph_center_lat: float = _raw.get("graph", {}).get("center_lat", 23.7639)
+    graph_center_lng: float = _raw.get("graph", {}).get("center_lng", 90.4066)
+    graph_radius_m: float = _raw.get("graph", {}).get("radius_m", 2000)
 
     # Vehicle types (dict of dicts)
     vehicle_types: dict[str, Any] = field(default_factory=lambda: _raw.get("vehicle_types", {}))

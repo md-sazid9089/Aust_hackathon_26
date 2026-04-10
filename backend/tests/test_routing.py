@@ -18,6 +18,7 @@ import pytest
 
 # ─── Health Check ────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_health_check(client):
     """GET /health should return the canonical ok payload."""
@@ -27,6 +28,7 @@ async def test_health_check(client):
 
 
 # ─── Single-Modal Routing ───────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_single_modal_route(client, sample_route_request):
@@ -65,6 +67,7 @@ async def test_single_modal_route_bike(client):
 
 # ─── Multi-Modal Routing ────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_multimodal_route(client, sample_multimodal_request):
     """POST /route with multiple modes should return legs + mode switches."""
@@ -85,6 +88,7 @@ async def test_multimodal_route(client, sample_multimodal_request):
 
 
 # ─── Error Cases ────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_invalid_mode(client):
@@ -111,6 +115,7 @@ async def test_missing_origin(client):
 
 
 # ─── Response Structure ─────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_route_response_has_geometry(client, sample_route_request):
