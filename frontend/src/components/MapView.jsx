@@ -15,12 +15,12 @@ import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMapEvents, 
 import L from 'leaflet';
 
 const SEGMENT_MODE_COLORS = {
-  car: '#3b82f6',      // blue
-  bike: '#22c55e',     // green
-  rickshaw: '#f97316', // orange
-  walk: '#9ca3af',     // gray
-  bus: '#ef4444',      // red
-  transit: '#ef4444',  // red alias
+  bus: '#ffffff',      // white
+  transit: '#ffffff',  // white alias
+  car: '#ef4444',      // red
+  bike: '#facc15',     // yellow
+  rickshaw: '#22c55e', // green
+  walk: '#a855f7',     // purple
 };
 
 const SINGLE_MODE_COLORS = {
@@ -160,6 +160,7 @@ function MapView({
   origin,
   destination,
   routeResult,
+  routeMode,
   selectedMode,
   graphNodes,
   graphEdges,
@@ -182,14 +183,31 @@ function MapView({
   const singleModeLineColor = SINGLE_MODE_COLORS[selectedMode] || '#22c55e';
 
   const coloredSegments = useMemo(() => {
+    if (routeMode !== 'multimodal') {
+      return [];
+    }
+
+    const legSegments = (routeResult?.legs || [])
+      .filter((leg) => Array.isArray(leg.geometry) && leg.geometry.length >= 2)
+      .map((leg, idx) => ({
+        key: `leg-${idx}`,
+        mode: leg.mode,
+        color: SEGMENT_MODE_COLORS[leg.mode] || '#22c55e',
+        positions: leg.geometry.map((p) => [p.lat, p.lng]),
+      }));
+
+    if (legSegments.length > 0) {
+      return legSegments;
+    }
+
     const suggestions = routeResult?.multimodal_suggestions || [];
     if (!Array.isArray(suggestions) || suggestions.length === 0) {
       return [];
     }
 
-    const fastest = suggestions.find((s) => s.strategy === 'fastest_time');
     const shortest = suggestions.find((s) => s.strategy === 'shortest_distance');
-    const chosen = fastest || shortest;
+    const fastest = suggestions.find((s) => s.strategy === 'fastest_time');
+    const chosen = shortest || fastest;
     if (!chosen || !Array.isArray(chosen.segments)) {
       return [];
     }
@@ -202,7 +220,7 @@ function MapView({
         color: SEGMENT_MODE_COLORS[seg.recommended_vehicle] || '#22c55e',
         positions: seg.geometry.map((p) => [p.lat, p.lng]),
       }));
-  }, [routeResult]);
+  }, [routeResult, routeMode]);
 
   const originDragHandlers = useMemo(
     () => ({
@@ -231,7 +249,16 @@ function MapView({
   // Filter nodes by selected mode and compute their visualization
   const filteredNodes = useMemo(() => {
     if (!graphNodes || !Array.isArray(graphNodes)) return [];
-    
+
+    if (routeMode === 'multimodal') {
+      return graphNodes.map((node) => ({
+        ...node,
+        position: [node.lat, node.lng],
+        color: '#3b82f6',
+        opacity: 0.78,
+      }));
+    }
+
     return graphNodes
       .filter((node) => {
         // Show node if it's accessible by the current mode
@@ -244,7 +271,7 @@ function MapView({
         // Calculate opacity based on how many modes can access this node
         opacity: Math.min(0.9, 0.5 + (node.accessible_modes.length * 0.1)),
       }));
-  }, [graphNodes, selectedMode]);
+  }, [graphNodes, selectedMode, routeMode]);
 
   const nodeLookup = useMemo(() => {
     const map = new Map();
