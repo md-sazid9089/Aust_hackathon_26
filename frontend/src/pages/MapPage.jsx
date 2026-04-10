@@ -51,7 +51,7 @@ function MapPage({ apiStatus }) {
     }
   };
 
-  const handleComputeRoute = async () => {
+  const handleComputeRoute = async (includeMultimodal = false) => {
     if (!origin || !destination) {
       setError('Please set both origin and destination by clicking the map.');
       return;
@@ -62,9 +62,10 @@ function MapPage({ apiStatus }) {
       const result = await computeRoute({
         origin,
         destination,
-        modes,
+        modes: [modes?.[0] || 'car'],
         optimize: 'time',
         avoid_anomalies: true,
+        include_multimodal: includeMultimodal,
       });
       setRouteResult(result);
     } catch (err) {
@@ -107,6 +108,7 @@ function MapPage({ apiStatus }) {
           origin={origin}
           destination={destination}
           routeResult={routeResult}
+          selectedMode={modes?.[0] || 'car'}
           graphNodes={graphNodes}
           onMapClick={handleMapClick}
           onOriginDrag={handleOriginDrag}
@@ -168,7 +170,8 @@ function MapPage({ apiStatus }) {
             routeResult={routeResult}
             isLoading={isLoading}
             error={error}
-            onCompute={handleComputeRoute}
+            onCompute={() => handleComputeRoute(false)}
+            onComputeMultimodal={() => handleComputeRoute(true)}
             onClear={handleClear}
           />
         </div>
