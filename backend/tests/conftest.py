@@ -18,7 +18,9 @@ from httpx import AsyncClient, ASGITransport
 # ─── Override config BEFORE importing the app ────────────────────
 # This ensures tests don't try to load a real OSM graph
 import os
-os.environ["CONFIG_PATH"] = os.path.join(os.path.dirname(__file__), "..", "..", "config.json")
+# Construct the path to config.json in the project root
+conf_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "config.json"))
+os.environ["CONFIG_PATH"] = conf_path
 
 from main import app
 
