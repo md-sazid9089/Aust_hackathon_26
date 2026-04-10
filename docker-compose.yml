@@ -43,7 +43,7 @@ services:
       MYSQL_USER: ${DB_USER:-golitransit}
       MYSQL_PASSWORD: ${DB_PASSWORD:-golitransit_pass}
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql-db:/var/lib/mysql
     command: --default-authentication-plugin=mysql_native_password
@@ -128,7 +128,7 @@ services:
       - ./frontend:/app                        # Live reload in dev
       - /app/node_modules                      # Prevent host node_modules override
     environment:
-      - VITE_API_BASE_URL=http://localhost:8000
+      - VITE_API_BASE_URL=http://backend:8000
     depends_on:
       backend:
         condition: service_healthy
