@@ -5,6 +5,7 @@ Database Connection Utility
 Initializes SQLAlchemy engine using environment variables from .env.
 """
 import os
+from urllib.parse import quote_plus
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv
@@ -23,12 +24,16 @@ DB_SSL_MODE = os.getenv("DB_SSL_MODE", "require")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    DATABASE_URL = (
-        f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-        f"?ssl_mode={DB_SSL_MODE}"
-    )
+    safe_user = quote_plus(DB_USER or "")
+    safe_password = quote_plus(DB_PASSWORD or "")
+    DATABASE_URL = f"mysql+pymysql://{safe_user}:{safe_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+connect_args = {}
+if DB_SSL_MODE.lower() == "require":
+    # Azure MySQL requires secure transport; use system CA bundle for TLS.
+    connect_args = {"ssl": {"ca": "/etc/ssl/certs/ca-certificates.crt"}}
+
+engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=connect_args)
 
 
 def check_db_connection():
@@ -36,6 +41,6 @@ def check_db_connection():
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         return True
-    except OperationalError as e:
+    except (OperationalError, Exception) as e:
         print(f"[DB ERROR] {e}")
         return False
