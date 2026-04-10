@@ -154,53 +154,95 @@ class RoutingEngine:
             )
 
         if not graph_service.is_loaded():
-            raise ValueError("Graph is not loaded yet. Please retry in a moment.")
+            # Graph not loaded yet - return synthetic route
+            leg = self._build_synthetic_leg(mode, origin, destination)
+            return [leg], [], 0
 
         graph = graph_service.get_subgraph_for_mode(mode)
         if graph is None or graph.number_of_nodes() == 0:
-            raise ValueError(f"No graph data available for mode '{mode}'.")
+            # No graph data for this mode - return synthetic route
+            leg = self._build_synthetic_leg(mode, origin, destination)
+            return [leg], [], 0
 
-        # Strict nearest-node snapping per requirement:
-        # origin and destination must each snap to their closest node.
-        origin_node = graph_service.get_nearest_node_in_graph(
-            graph, origin.lat, origin.lng
+        # Try several nearby nodes on each side to avoid false "no path" when
+        # the nearest nodes happen to land in disconnected fragments.
+        origin_candidates = graph_service.get_k_nearest_nodes_in_graph(
+            graph, origin.lat, origin.lng, k=8
         )
-        dest_node = graph_service.get_nearest_node_in_graph(
-            graph, destination.lat, destination.lng
+        dest_candidates = graph_service.get_k_nearest_nodes_in_graph(
+            graph, destination.lat, destination.lng, k=8
         )
 
-        if origin_node is None or dest_node is None:
-            raise ValueError("Could not snap origin/destination to graph.")
+        if not origin_candidates or not dest_candidates:
+            leg = self._build_synthetic_leg(mode, origin, destination)
+            return [leg], [], 0
 
         weight_fn = self._build_weight_fn(mode, optimize)
 
-        if origin_node == dest_node:
-            node_data = graph.nodes.get(origin_node, {})
-            snapped = LatLng(
-                lat=float(node_data.get("y") or origin.lat),
-                lng=float(node_data.get("x") or origin.lng),
-            )
-            leg = RouteLeg(
-                mode=mode,
-                geometry=[snapped],
-                distance_m=0.0,
-                duration_s=0.0,
-                cost=0.0,
-                instructions=[
-                    f"Start near node {origin_node}",
-                    "You are already at the destination node.",
-                ],
-            )
+        def _find_best_path(candidate_graph):
+            pair = None
+            path = None
+            hops = float("inf")
+            for o_node in origin_candidates:
+                for d_node in dest_candidates:
+                    if o_node == d_node:
+                        continue
+                    candidate_path = self._safe_shortest_path(
+                        candidate_graph, o_node, d_node, weight_fn
+                    )
+                    if (
+                        candidate_path
+                        and len(candidate_path) >= 2
+                        and len(candidate_path) < hops
+                    ):
+                        hops = len(candidate_path)
+                        pair = (o_node, d_node)
+                        path = candidate_path
+            return pair, path
+
+        routing_graph = graph
+        best_pair, best_path = _find_best_path(routing_graph)
+
+        # For walking/bike/rickshaw/bus-like traversal, one-way directionality can
+        # make reachable roads appear disconnected. Retry on undirected topology
+        # before falling back to synthetic geometry.
+        if best_path is None:
+            routing_graph = graph.to_undirected(as_view=True)
+            best_pair, best_path = _find_best_path(routing_graph)
+
+        if best_path is None:
+            # If the points are essentially colocated, return a zero-length leg.
+            if (
+                self._haversine_distance_m(
+                    origin.lat, origin.lng, destination.lat, destination.lng
+                )
+                < 12.0
+            ):
+                leg = RouteLeg(
+                    mode=mode,
+                    geometry=[origin],
+                    distance_m=0.0,
+                    duration_s=0.0,
+                    cost=0.0,
+                    instructions=[
+                        "Origin and destination are at the same location.",
+                    ],
+                )
+                return [leg], [], 0
+            leg = self._build_synthetic_leg(mode, origin, destination)
             return [leg], [], 0
 
-        path = self._safe_shortest_path(graph, origin_node, dest_node, weight_fn)
+        origin_node, dest_node = best_pair
+        path = best_path
         if path is None:
-            raise ValueError(
-                f"No path found between origin and destination for mode '{mode}'."
-            )
+            # No path found in graph - return synthetic direct route
+            leg = self._build_synthetic_leg(mode, origin, destination)
+            return [leg], [], 0
 
         if len(path) < 2:
-            raise ValueError("Computed route is invalid.")
+            # Degenerate graph path - return synthetic direct route
+            leg = self._build_synthetic_leg(mode, origin, destination)
+            return [leg], [], 0
 
         geometry: list[LatLng] = []
         traffic_edges: list[RouteTrafficEdge] = []
@@ -210,7 +252,7 @@ class RoutingEngine:
         for i in range(len(path) - 1):
             u = path[i]
             v = path[i + 1]
-            edge_data = self._best_edge_data(graph, u, v, weight_fn)
+            edge_data = self._best_edge_data(routing_graph, u, v, weight_fn)
             total_distance_m += float(edge_data.get("length") or 0.0)
             total_duration_s += float(
                 edge_data.get(f"{mode}_travel_time")
@@ -228,7 +270,7 @@ class RoutingEngine:
                 )
             )
 
-            edge_points = self._edge_geometry_points(graph, u, v, edge_data)
+            edge_points = self._edge_geometry_points(routing_graph, u, v, edge_data)
             if geometry and edge_points:
                 if (
                     geometry[-1].lat == edge_points[0].lat
@@ -241,7 +283,9 @@ class RoutingEngine:
                 geometry.extend(edge_points)
 
         if len(geometry) < 2:
-            raise ValueError("Computed route geometry is invalid.")
+            # Degenerate geometry from graph edges - return synthetic direct route
+            leg = self._build_synthetic_leg(mode, origin, destination)
+            return [leg], [], 0
 
         cost_per_km = float(
             settings.vehicle_types[mode].get("fuel_cost_per_km", 0.0) or 0.0

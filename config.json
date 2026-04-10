@@ -22,19 +22,19 @@
     },
     "bike": {
       "default_speed_kmh": 15,
-      "allowed_road_types": ["cycleway", "residential", "tertiary", "secondary", "path"],
+      "allowed_road_types": ["cycleway", "residential", "tertiary", "secondary", "primary", "trunk", "unclassified", "service", "living_street", "path", "footway", "pedestrian"],
       "fuel_cost_per_km": 0.0,
       "co2_grams_per_km": 0
     },
     "rickshaw": {
       "default_speed_kmh": 15,
-      "allowed_road_types": ["secondary", "tertiary", "residential", "service", "unclassified", "living_street", "path"],
+      "allowed_road_types": ["trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link", "residential", "service", "unclassified", "living_street", "path"],
       "fuel_cost_per_km": 0.03,
       "co2_grams_per_km": 0
     },
     "walk": {
       "default_speed_kmh": 5,
-      "allowed_road_types": ["footway", "path", "residential", "pedestrian", "steps", "service", "tertiary", "secondary", "living_street", "unclassified"],
+      "allowed_road_types": ["footway", "path", "residential", "pedestrian", "steps", "service", "tertiary", "tertiary_link", "secondary", "secondary_link", "primary", "primary_link", "trunk", "trunk_link", "living_street", "unclassified"],
       "fuel_cost_per_km": 0.0,
       "co2_grams_per_km": 0
     },

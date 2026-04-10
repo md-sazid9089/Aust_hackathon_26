@@ -260,8 +260,10 @@ class GraphService:
                 data["transit_allowed"] = False
                 data["car_allowed"] = True
 
-            # Bike must be allowed exactly where rickshaw is allowed.
-            data["bike_allowed"] = bool(data.get("rickshaw_allowed", False))
+            # Keep bike permissions based on its own mode configuration.
+            # Do not forcibly mirror rickshaw constraints, otherwise valid
+            # bike corridors can disappear and trigger synthetic fallback routes.
+            data["bike_allowed"] = bool(data.get("bike_allowed", False))
 
             # Bus (transit) should only run on main roads.
             if not _is_main_road(road_type):
