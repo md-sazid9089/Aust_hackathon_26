@@ -102,12 +102,12 @@ jobs:
         run: |
           cd frontend
           npm ci
-          vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+          npm run build
 
       - name: Deploy to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: cd frontend && vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        run: cd frontend && vercel deploy --prod --token="$VERCEL_TOKEN"
 
   deploy-frontend-preview:
     name: Deploy frontend preview to Vercel
@@ -142,7 +142,7 @@ jobs:
         run: |
           cd frontend
           npm ci
-          vercel build --token="${{ secrets.VERCEL_TOKEN }}"
+          npm run build
 
       - name: Deploy preview to Vercel
         id: preview_deploy
@@ -150,7 +150,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           cd frontend
-          PREVIEW_URL=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")
+          PREVIEW_URL=$(vercel deploy --token="$VERCEL_TOKEN")
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
 
       - name: Add preview URL to job summary
