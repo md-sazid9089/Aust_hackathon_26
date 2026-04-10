@@ -10,9 +10,21 @@ export default defineConfig({
     // Proxy API calls to backend during development
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://backend:8000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      '/health': {
+        target: 'http://backend:8000',
+        changeOrigin: true,
+      },
+      '/route': {
+        target: 'http://backend:8000',
+        changeOrigin: true,
+      },
+      '/graph': {
+        target: 'http://backend:8000',
+        changeOrigin: true,
       },
     },
   },
