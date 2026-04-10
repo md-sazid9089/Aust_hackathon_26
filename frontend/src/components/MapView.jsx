@@ -6,6 +6,7 @@
  *   - Origin/destination markers
  *   - Route polyline visualization (from API response geometry)
  *   - Click handler for setting origin/destination
+ *   - Custom FAB zoom controls (replaces default Leaflet controls)
  *
  * Integration:
  *   - Receives origin, destination, routeResult from MapPage
@@ -13,41 +14,42 @@
  *   - Route geometry comes from backend /route API response legs
  *
  * Dependencies:
- *   - react-leaflet (MapContainer, TileLayer, Marker, Polyline, useMapEvents)
+ *   - react-leaflet (MapContainer, TileLayer, Marker, Polyline, useMapEvents, useMap)
  *   - leaflet CSS (loaded in index.html)
  */
 
-import { MapContainer, TileLayer, Marker, Polyline, useMapEvents, Popup } from 'react-leaflet';
+import { createPortal } from 'react-dom';
+import { MapContainer, TileLayer, Marker, Polyline, useMapEvents, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
-// ─── Custom marker icons (avoid default Leaflet icon issues with bundlers) ───
+// ─── Custom marker icons ──────────────────────────────────────────
 
 const originIcon = new L.DivIcon({
   className: '',
   html: `<div style="
-    width: 24px; height: 24px; border-radius: 50%;
-    background: linear-gradient(135deg, #38bdf8, #0ea5e9);
-    border: 3px solid white;
-    box-shadow: 0 2px 8px rgba(14, 165, 233, 0.5);
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #22c55e;
+    border: 3px solid #ffffff;
+    box-shadow: 0 0 0 4px rgba(34,197,94,0.30), 0 4px 12px rgba(0,0,0,0.5);
   "></div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
 });
 
 const destIcon = new L.DivIcon({
   className: '',
   html: `<div style="
-    width: 24px; height: 24px; border-radius: 50%;
-    background: linear-gradient(135deg, #34d399, #10b981);
-    border: 3px solid white;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #8b5cf6;
+    border: 3px solid #ffffff;
+    box-shadow: 0 0 0 4px rgba(139,92,246,0.30), 0 4px 12px rgba(0,0,0,0.5);
   "></div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
 });
 
 
-// ─── Click Handler Sub-Component ────────────────────────────────
+// ─── Click Handler Sub-Component ─────────────────────────────────
 
 function MapClickHandler({ onMapClick }) {
   useMapEvents({
@@ -59,7 +61,88 @@ function MapClickHandler({ onMapClick }) {
 }
 
 
-// ─── Main MapView Component ─────────────────────────────────────
+// ─── Custom FAB Zoom Controls ─────────────────────────────────────
+// Renders floating action buttons inside the map container via portal.
+// Replaces the default Leaflet zoom control (zoomControl={false}).
+
+function MapFABControls({ defaultCenter, defaultZoom }) {
+  const map = useMap();
+  const container = map.getContainer();
+
+  const fabBase = {
+    width: 48, height: 48,
+    borderRadius: '50%',
+    background: '#8b5cf6',
+    color: '#ffffff',
+    border: 'none',
+    cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 20, fontWeight: 700,
+    boxShadow: '0 8px 24px rgba(0,0,0,0.55)',
+    transition: 'transform 0.18s ease, filter 0.18s ease',
+    outline: 'none',
+    userSelect: 'none',
+  };
+
+  const onEnter = (e) => {
+    e.currentTarget.style.transform = 'scale(1.08)';
+    e.currentTarget.style.filter = 'brightness(1.15)';
+  };
+  const onLeave = (e) => {
+    e.currentTarget.style.transform = 'scale(1)';
+    e.currentTarget.style.filter = 'brightness(1)';
+  };
+
+  return createPortal(
+    <div style={{
+      position: 'absolute',
+      right: 20,
+      bottom: 100,
+      zIndex: 1000,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+      pointerEvents: 'all',
+    }}>
+      {/* Zoom In */}
+      <button
+        style={fabBase}
+        onClick={() => map.zoomIn()}
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
+        title="Zoom In"
+      >
+        +
+      </button>
+
+      {/* Zoom Out */}
+      <button
+        style={fabBase}
+        onClick={() => map.zoomOut()}
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
+        title="Zoom Out"
+      >
+        −
+      </button>
+
+      {/* Recenter */}
+      <button
+        style={{ ...fabBase, fontSize: 16 }}
+        onClick={() => map.setView(defaultCenter, defaultZoom)}
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
+        title="Recenter"
+      >
+        ⊙
+      </button>
+    </div>,
+    container,
+  );
+}
+
+
+// ─── Main MapView Component ───────────────────────────────────────
 
 function MapView({ origin, destination, routeResult, onMapClick }) {
   // Default center: San Francisco (matches config.json default_location)
@@ -76,47 +159,50 @@ function MapView({ origin, destination, routeResult, onMapClick }) {
       center={defaultCenter}
       zoom={defaultZoom}
       style={{ width: '100%', height: '100%' }}
-      zoomControl={true}
+      zoomControl={false}
     >
-      {/* ─── Base tile layer ─────────────────────────────────── */}
+      {/* ─── Base tile layer ──────────────────────────────── */}
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
       />
 
-      {/* ─── Click handler ───────────────────────────────────── */}
+      {/* ─── Click handler ────────────────────────────────── */}
       <MapClickHandler onMapClick={onMapClick} />
 
-      {/* ─── Origin marker ───────────────────────────────────── */}
+      {/* ─── Custom FAB zoom controls ─────────────────────── */}
+      <MapFABControls defaultCenter={defaultCenter} defaultZoom={defaultZoom} />
+
+      {/* ─── Origin marker ────────────────────────────────── */}
       {origin && (
         <Marker position={[origin.lat, origin.lng]} icon={originIcon}>
           <Popup>
-            <span style={{ color: '#0ea5e9', fontWeight: 600 }}>Origin</span>
+            <span style={{ color: '#22c55e', fontWeight: 600 }}>Origin</span>
             <br />
             {origin.lat.toFixed(5)}, {origin.lng.toFixed(5)}
           </Popup>
         </Marker>
       )}
 
-      {/* ─── Destination marker ──────────────────────────────── */}
+      {/* ─── Destination marker ───────────────────────────── */}
       {destination && (
         <Marker position={[destination.lat, destination.lng]} icon={destIcon}>
           <Popup>
-            <span style={{ color: '#10b981', fontWeight: 600 }}>Destination</span>
+            <span style={{ color: '#8b5cf6', fontWeight: 600 }}>Destination</span>
             <br />
             {destination.lat.toFixed(5)}, {destination.lng.toFixed(5)}
           </Popup>
         </Marker>
       )}
 
-      {/* ─── Route polyline ──────────────────────────────────── */}
+      {/* ─── Route polyline ───────────────────────────────── */}
       {routeCoords.length >= 2 && (
         <Polyline
           positions={routeCoords}
           pathOptions={{
-            color: '#38bdf8',
+            color: '#22c55e',
             weight: 5,
-            opacity: 0.8,
+            opacity: 0.85,
             dashArray: null,
             lineCap: 'round',
             lineJoin: 'round',

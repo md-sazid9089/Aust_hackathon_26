@@ -14,114 +14,270 @@
  *   - Route result matches backend RouteResponse schema
  */
 
-function RoutePanel({ origin, destination, routeResult, isLoading, error, onCompute, onClear }) {
-  return (
-    <div className="space-y-4 animate-fade-in">
-      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
-        Route Planner
-      </h2>
+const MODE_COLORS = {
+  car:     '#22c55e',
+  bike:    '#34d399',
+  walk:    '#f59e0b',
+  transit: '#8b5cf6',
+  rickshaw:'#ec4899',
+};
 
-      {/* ─── Waypoints ────────────────────────────────────────── */}
-      <div className="space-y-2">
+function RoutePanel({ origin, destination, routeResult, isLoading, error, onCompute, onClear }) {
+  const hasPoints = origin && destination;
+
+  return (
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+      {/* ── Section header ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        paddingBottom: 12,
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        <div style={{
+          width: 28, height: 28,
+          borderRadius: 8,
+          background: 'linear-gradient(135deg, #22c55e22, #22c55e10)',
+          border: '1px solid rgba(34,197,94,0.25)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 13,
+        }}>
+          🗺
+        </div>
+        <div>
+          <div style={{
+            fontSize: 14, fontWeight: 800,
+            color: '#ffffff',
+            letterSpacing: '-0.01em',
+            fontFamily: 'Inter, sans-serif',
+          }}>
+            Route Planner
+          </div>
+          <div style={{
+            fontSize: 10, color: '#525252',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+          }}>
+            {!origin ? 'Set origin on map' : !destination ? 'Set destination on map' : 'Ready to compute'}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Waypoints ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <WaypointDisplay
           label="Origin"
           latlng={origin}
-          color="text-transit-400"
-          dotColor="bg-transit-400"
+          accentColor="#22c55e"
+          emptyText="Tap map to set origin"
         />
         <WaypointDisplay
           label="Destination"
           latlng={destination}
-          color="text-emerald-400"
-          dotColor="bg-emerald-400"
+          accentColor="#8b5cf6"
+          emptyText="Tap map to set destination"
         />
       </div>
 
-      {/* ─── Actions ──────────────────────────────────────────── */}
-      <div className="flex gap-2">
+      {/* ── Action buttons ── */}
+      <div style={{ display: 'flex', gap: 8, paddingTop: 2 }}>
         <button
           id="btn-compute-route"
           onClick={onCompute}
-          disabled={!origin || !destination || isLoading}
-          className="flex-1 px-4 py-2 bg-transit-600 hover:bg-transit-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm font-medium rounded-lg transition-all"
+          disabled={!hasPoints || isLoading}
+          style={{
+            flex: 1,
+            padding: '14px 0',
+            borderRadius: 14,
+            border: 'none',
+            cursor: (!hasPoints || isLoading) ? 'not-allowed' : 'pointer',
+            fontWeight: 800,
+            fontSize: 15,
+            fontFamily: 'Inter, sans-serif',
+            letterSpacing: '-0.01em',
+            background: (!hasPoints || isLoading)
+              ? '#1e1e20'
+              : 'linear-gradient(135deg, #16a34a, #22c55e)',
+            color: (!hasPoints || isLoading) ? '#404040' : '#0a0a0a',
+            boxShadow: (!hasPoints || isLoading)
+              ? 'none'
+              : '0 8px 24px rgba(34,197,94,0.40), inset 0 1px 0 rgba(255,255,255,0.15)',
+            transition: 'all 0.18s ease',
+          }}
+          onMouseEnter={e => {
+            if (hasPoints && !isLoading) {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 12px 32px rgba(34,197,94,0.55), inset 0 1px 0 rgba(255,255,255,0.15)';
+            }
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = (!hasPoints || isLoading)
+              ? 'none'
+              : '0 8px 24px rgba(34,197,94,0.40), inset 0 1px 0 rgba(255,255,255,0.15)';
+          }}
         >
           {isLoading ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Computing...
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9 }}>
+              <span style={{
+                width: 15, height: 15,
+                border: '2.5px solid rgba(10,10,10,0.25)',
+                borderTopColor: '#0a0a0a',
+                borderRadius: '50%',
+                display: 'inline-block',
+                animation: 'spin 0.7s linear infinite',
+              }} />
+              Computing…
             </span>
-          ) : (
-            'Compute Route'
-          )}
+          ) : 'Compute Route →'}
         </button>
+
         <button
           id="btn-clear-route"
           onClick={onClear}
-          className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded-lg transition-colors"
+          style={{
+            padding: '14px 16px',
+            borderRadius: 14,
+            border: '1.5px solid rgba(255,255,255,0.10)',
+            background: 'transparent',
+            color: '#737373',
+            fontWeight: 700,
+            fontSize: 13,
+            fontFamily: 'Inter, sans-serif',
+            cursor: 'pointer',
+            transition: 'all 0.18s ease',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = '#1e1e20';
+            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.20)';
+            e.currentTarget.style.color = '#ffffff';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.10)';
+            e.currentTarget.style.color = '#737373';
+          }}
         >
           Clear
         </button>
       </div>
 
-      {/* ─── Error ────────────────────────────────────────────── */}
+      {/* ── Error ── */}
       {error && (
-        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400 animate-slide-up">
-          ⚠️ {error}
+        <div
+          className="animate-slide-up"
+          style={{
+            padding: '11px 14px',
+            background: 'rgba(239,68,68,0.08)',
+            border: '1px solid rgba(239,68,68,0.22)',
+            borderRadius: 12,
+            fontSize: 12,
+            fontWeight: 600,
+            color: '#f87171',
+            lineHeight: 1.55,
+            fontFamily: 'Inter, sans-serif',
+          }}
+        >
+          <span style={{ marginRight: 7 }}>⚠</span>{error}
         </div>
       )}
 
-      {/* ─── Route Result ─────────────────────────────────────── */}
+      {/* ── Route result ── */}
       {routeResult && (
-        <div className="space-y-3 animate-slide-up">
-          {/* Summary */}
-          <div className="glass-panel-light p-3">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+        <div className="animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+          {/* Summary metrics */}
+          <div style={{
+            background: '#111113',
+            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 14,
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              padding: '10px 14px 6px',
+              fontSize: 9,
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              letterSpacing: '0.14em',
+              color: '#525252',
+              fontFamily: 'JetBrains Mono, monospace',
+            }}>
               Route Summary
-            </h3>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div>
-                <div className="text-lg font-bold text-gray-200">
-                  {formatDistance(routeResult.total_distance_m)}
-                </div>
-                <div className="text-[10px] text-gray-500 uppercase">Distance</div>
-              </div>
-              <div>
-                <div className="text-lg font-bold text-gray-200">
-                  {formatDuration(routeResult.total_duration_s)}
-                </div>
-                <div className="text-[10px] text-gray-500 uppercase">Duration</div>
-              </div>
-              <div>
-                <div className="text-lg font-bold text-gray-200">
-                  ${routeResult.total_cost.toFixed(2)}
-                </div>
-                <div className="text-[10px] text-gray-500 uppercase">Cost</div>
-              </div>
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              borderTop: '1px solid rgba(255,255,255,0.04)',
+            }}>
+              <MetricCell
+                value={formatDistance(routeResult.total_distance_m)}
+                label="Distance"
+                accent="#22c55e"
+                borderRight
+              />
+              <MetricCell
+                value={formatDuration(routeResult.total_duration_s)}
+                label="Duration"
+                accent="#ffffff"
+                borderRight
+              />
+              <MetricCell
+                value={`$${routeResult.total_cost.toFixed(2)}`}
+                label="Cost"
+                accent="#f59e0b"
+              />
             </div>
           </div>
 
           {/* Legs */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{
+              fontSize: 9, fontWeight: 800,
+              textTransform: 'uppercase', letterSpacing: '0.14em',
+              color: '#525252',
+              fontFamily: 'JetBrains Mono, monospace',
+              paddingLeft: 2,
+            }}>
               Route Legs
-            </h3>
+            </div>
             {routeResult.legs.map((leg, idx) => (
               <LegCard key={idx} leg={leg} index={idx} />
             ))}
           </div>
 
-          {/* Mode Switches */}
+          {/* Mode switches */}
           {routeResult.mode_switches?.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div style={{
+                fontSize: 9, fontWeight: 800,
+                textTransform: 'uppercase', letterSpacing: '0.14em',
+                color: '#525252',
+                fontFamily: 'JetBrains Mono, monospace',
+                paddingLeft: 2,
+              }}>
                 Mode Transfers
-              </h3>
+              </div>
               {routeResult.mode_switches.map((sw, idx) => (
-                <div key={idx} className="glass-panel-light p-2 text-xs text-gray-400 flex items-center gap-2">
-                  <span className="text-transit-400">{getModeEmoji(sw.from_mode)}</span>
-                  <span>→</span>
-                  <span className="text-emerald-400">{getModeEmoji(sw.to_mode)}</span>
-                  <span className="ml-auto text-gray-500">
+                <div key={idx} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 12px',
+                  background: '#111113',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  borderRadius: 10,
+                }}>
+                  <span style={{ fontSize: 14 }}>{getModeEmoji(sw.from_mode)}</span>
+                  <span style={{ color: '#404040', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>→</span>
+                  <span style={{ fontSize: 14 }}>{getModeEmoji(sw.to_mode)}</span>
+                  <span style={{
+                    marginLeft: 'auto',
+                    color: '#f59e0b',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: 11, fontWeight: 700,
+                  }}>
                     +{sw.penalty_time_s}s
                   </span>
                 </div>
@@ -131,60 +287,210 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
 
           {/* Anomalies avoided */}
           {routeResult.anomalies_avoided > 0 && (
-            <div className="p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-xs text-yellow-400">
-              ⚠️ Avoided {routeResult.anomalies_avoided} anomaly-affected edge(s)
+            <div style={{
+              padding: '9px 14px',
+              background: 'rgba(245,158,11,0.07)',
+              border: '1px solid rgba(245,158,11,0.22)',
+              borderRadius: 10, fontSize: 12,
+              fontWeight: 600,
+              color: '#f59e0b',
+              display: 'flex', alignItems: 'center', gap: 8,
+              fontFamily: 'Inter, sans-serif',
+            }}>
+              <span>⚠</span>
+              Avoided {routeResult.anomalies_avoided} anomaly-affected edge(s)
             </div>
           )}
         </div>
       )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
 
 
-// ─── Sub-Components ──────────────────────────────────────────────
+// ─── Sub-Components ───────────────────────────────────────────────
 
-function WaypointDisplay({ label, latlng, color, dotColor }) {
+function WaypointDisplay({ label, latlng, accentColor, emptyText }) {
+  const coordText = latlng
+    ? `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`
+    : null;
+
   return (
-    <div className="flex items-center gap-2 glass-panel-light p-2 text-sm">
-      <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
-      <span className={`${color} font-medium text-xs w-20`}>{label}</span>
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '11px 14px',
+      background: latlng ? '#1a1a1c' : '#141416',
+      border: latlng
+        ? `1px solid ${accentColor}28`
+        : '1px solid rgba(255,255,255,0.06)',
+      borderRadius: 12,
+      transition: 'all 0.2s ease',
+    }}>
+      {/* Dot */}
+      <div style={{
+        width: 9, height: 9,
+        borderRadius: '50%',
+        flexShrink: 0,
+        background: latlng ? accentColor : '#2e2e30',
+        boxShadow: latlng ? `0 0 10px ${accentColor}70` : 'none',
+        transition: 'all 0.2s ease',
+      }} />
+
+      {/* Label */}
+      <span style={{
+        fontSize: 10,
+        fontWeight: 800,
+        textTransform: 'uppercase',
+        letterSpacing: '0.10em',
+        color: latlng ? accentColor : '#404040',
+        fontFamily: 'JetBrains Mono, monospace',
+        width: 72,
+        flexShrink: 0,
+        transition: 'color 0.2s ease',
+      }}>
+        {label}
+      </span>
+
+      {/* Coordinate / placeholder */}
       {latlng ? (
-        <span className="text-gray-400 text-xs">
-          {latlng.lat.toFixed(5)}, {latlng.lng.toFixed(5)}
+        <span style={{
+          color: '#a3a3a3',
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: 11,
+          fontWeight: 500,
+          overflow: 'hidden',
+          whiteSpace: 'nowrap',
+          textOverflow: 'ellipsis',
+          flex: 1,
+          minWidth: 0,
+        }}>
+          {coordText}
         </span>
       ) : (
-        <span className="text-gray-600 text-xs italic">Click map to set</span>
+        <span style={{
+          color: '#404040',
+          fontSize: 12,
+          fontWeight: 500,
+          fontStyle: 'italic',
+          fontFamily: 'Inter, sans-serif',
+        }}>
+          {emptyText}
+        </span>
       )}
+    </div>
+  );
+}
+
+function MetricCell({ value, label, accent, borderRight }) {
+  return (
+    <div style={{
+      padding: '10px 12px 12px',
+      textAlign: 'center',
+      borderRight: borderRight ? '1px solid rgba(255,255,255,0.04)' : 'none',
+    }}>
+      <div style={{
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: 17, fontWeight: 800,
+        color: accent || '#fff',
+        marginBottom: 3,
+        letterSpacing: '-0.02em',
+      }}>
+        {value}
+      </div>
+      <div style={{
+        fontSize: 9,
+        color: '#525252',
+        textTransform: 'uppercase',
+        letterSpacing: '0.12em',
+        fontWeight: 700,
+        fontFamily: 'JetBrains Mono, monospace',
+      }}>
+        {label}
+      </div>
     </div>
   );
 }
 
 function LegCard({ leg, index }) {
+  const accent = MODE_COLORS[leg.mode] || '#22c55e';
   return (
-    <div className="glass-panel-light p-3">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
-          {getModeEmoji(leg.mode)}
-          <span className="capitalize">{leg.mode}</span>
+    <div style={{
+      background: '#111113',
+      border: '1px solid rgba(255,255,255,0.05)',
+      borderRadius: 12,
+      padding: '10px 14px 10px 18px',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      {/* Left accent stripe */}
+      <div style={{
+        position: 'absolute', left: 0, top: 4, bottom: 4, width: 3,
+        background: accent,
+        borderRadius: 99,
+        boxShadow: `0 0 8px ${accent}70`,
+      }} />
+
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 5,
+      }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span style={{ fontSize: 16 }}>{getModeEmoji(leg.mode)}</span>
+          <span style={{
+            textTransform: 'capitalize',
+            color: accent,
+            fontSize: 13,
+            fontWeight: 800,
+            fontFamily: 'Inter, sans-serif',
+          }}>
+            {leg.mode}
+          </span>
         </span>
-        <span className="text-xs text-gray-500">Leg {index + 1}</span>
+        <span style={{
+          fontSize: 9,
+          color: '#525252',
+          fontFamily: 'JetBrains Mono, monospace',
+          fontWeight: 700,
+          background: '#1e1e20',
+          border: '1px solid rgba(255,255,255,0.06)',
+          borderRadius: 6,
+          padding: '2px 8px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+        }}>
+          Leg {index + 1}
+        </span>
       </div>
-      <div className="flex gap-4 text-xs text-gray-400">
+
+      <div style={{
+        display: 'flex',
+        gap: 10,
+        fontSize: 11,
+        fontWeight: 600,
+        color: '#737373',
+        fontFamily: 'JetBrains Mono, monospace',
+      }}>
         <span>{formatDistance(leg.distance_m)}</span>
+        <span style={{ color: '#2a2a2c' }}>|</span>
         <span>{formatDuration(leg.duration_s)}</span>
-        <span>${leg.cost.toFixed(2)}</span>
+        <span style={{ color: '#2a2a2c' }}>|</span>
+        <span style={{ color: '#f59e0b' }}>${leg.cost.toFixed(2)}</span>
       </div>
     </div>
   );
 }
 
 
-// ─── Helpers ─────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────
 
 function getModeEmoji(mode) {
-  const emojis = { car: '🚗', bike: '🚲', walk: '🚶', transit: '🚌' };
-  return emojis[mode] || '📍';
+  return ({ car: '🚗', bike: '🚲', walk: '🚶', transit: '🚌', rickshaw: '🛺' })[mode] || '📍';
 }
 
 function formatDistance(meters) {

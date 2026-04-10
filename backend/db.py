@@ -26,14 +26,23 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     safe_user = quote_plus(DB_USER or "")
     safe_password = quote_plus(DB_PASSWORD or "")
-    DATABASE_URL = f"mysql+pymysql://{safe_user}:{safe_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    DATABASE_URL = (
+        f"mysql+pymysql://{safe_user}:{safe_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    )
 
-connect_args = {}
-if DB_SSL_MODE.lower() == "require":
+
+# Disable SSL if ?ssl_disabled=true is in the DATABASE_URL
+if DATABASE_URL and "ssl_disabled=true" in DATABASE_URL:
+    connect_args = {"ssl": {}}
+elif DB_SSL_MODE.lower() == "require":
     # Azure MySQL requires secure transport; use system CA bundle for TLS.
     connect_args = {"ssl": {"ca": "/etc/ssl/certs/ca-certificates.crt"}}
+else:
+    connect_args = {}
 
-engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=connect_args)
+engine = create_engine(
+    DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=connect_args
+)
 
 
 def check_db_connection():

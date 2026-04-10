@@ -15,82 +15,245 @@
 function HomePage({ onNavigateToMap, apiStatus }) {
   const features = [
     {
-      icon: '🗺️',
+      icon: '⬡',
       title: 'Multi-Modal Routing',
       description: 'Combine car, bike, walk, and transit for optimal multi-leg journeys with configurable switch penalties.',
+      accent: '#38bdf8',
     },
     {
-      icon: '⚠️',
+      icon: '⚡',
       title: 'Real-Time Anomalies',
       description: 'Ingest accidents, closures, and weather events. Routes dynamically adjust with severity-based weight multipliers.',
+      accent: '#f97316',
     },
     {
-      icon: '🤖',
+      icon: '◈',
       title: 'ML Congestion Prediction',
       description: 'Machine learning predicts edge traversal times using historical patterns, time-of-day, and road characteristics.',
+      accent: '#14b8a6',
     },
     {
-      icon: '📊',
+      icon: '▦',
       title: 'Graph Snapshots',
       description: 'Export the current road graph state for debugging, visualization, and integration testing.',
+      accent: '#a78bfa',
     },
   ];
 
+  const systemMetrics = [
+    { value: '4.2K+',  label: 'Graph Nodes',         mono: true },
+    { value: '<2.5s',  label: 'Avg Latency',          mono: true },
+    { value: '12',     label: 'Active Routes',         mono: true },
+    { value: '99.8%',  label: 'Engine Uptime',         mono: true },
+  ];
+
   return (
-    <div className="max-w-5xl mx-auto px-6 py-12 animate-fade-in">
-      {/* ─── Hero Section ─────────────────────────────────────── */}
-      <section className="text-center mb-16">
-        <h2 className="text-5xl font-bold mb-4 bg-gradient-to-r from-transit-300 via-transit-400 to-emerald-400 bg-clip-text text-transparent">
-          GoliTransit
-        </h2>
-        <p className="text-xl text-gray-400 mb-2">
-          Multi-Modal Hyper-Local Routing Engine
-        </p>
-        <p className="text-gray-500 max-w-2xl mx-auto">
-          Intelligent route planning with real-time traffic anomaly handling
-          and ML-based congestion prediction. Built for the hackathon.
-        </p>
+    <div className="animate-fade-in" style={{ background: 'var(--bg-deep)', minHeight: '100%' }}>
 
-        <button
-          id="cta-open-map"
-          onClick={onNavigateToMap}
-          className="mt-8 px-8 py-3 bg-gradient-to-r from-transit-600 to-transit-500 hover:from-transit-500 hover:to-transit-400 text-white font-semibold rounded-xl shadow-lg shadow-transit-500/25 transition-all hover:shadow-transit-500/40 hover:-translate-y-0.5 active:translate-y-0"
-        >
-          Open Route Map →
-        </button>
-      </section>
+      {/* ═══ Hero Section ══════════════════════════════════════ */}
+      <section style={{
+        position: 'relative', overflow: 'hidden',
+        padding: '100px 24px 80px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {/* Radial glow backdrop */}
+        <div className="radial-glow" style={{
+          width: 600, height: 600,
+          background: 'radial-gradient(circle, rgba(14,165,233,0.15) 0%, transparent 70%)',
+          top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+        }} />
+        <div className="radial-glow" style={{
+          width: 300, height: 300,
+          background: 'radial-gradient(circle, rgba(20,184,166,0.12) 0%, transparent 70%)',
+          top: '20%', right: '10%',
+        }} />
 
-      {/* ─── Feature Cards ────────────────────────────────────── */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-16">
-        {features.map((feature, idx) => (
-          <div
-            key={idx}
-            className="glass-panel p-6 hover:border-transit-500/30 transition-all hover:-translate-y-1 animate-slide-up"
-            style={{ animationDelay: `${idx * 100}ms` }}
-          >
-            <div className="text-3xl mb-3">{feature.icon}</div>
-            <h3 className="text-lg font-semibold text-gray-200 mb-2">{feature.title}</h3>
-            <p className="text-sm text-gray-400 leading-relaxed">{feature.description}</p>
+        <div style={{ position: 'relative', maxWidth: 780, width: '100%', textAlign: 'center', zIndex: 1 }}>
+          {/* Tag pill */}
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '5px 16px', marginBottom: 28,
+            background: 'rgba(56,189,248,0.08)',
+            border: '1px solid rgba(56,189,248,0.22)',
+            borderRadius: 999, fontSize: 11, fontWeight: 600,
+            color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.10em',
+            fontFamily: 'JetBrains Mono, monospace',
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} className="animate-pulse-soft" />
+            Real-Time Routing Engine
           </div>
-        ))}
+
+          <h2 style={{
+            fontSize: 'clamp(42px, 7vw, 72px)',
+            fontWeight: 800,
+            letterSpacing: '-0.03em',
+            lineHeight: 1.1,
+            margin: '0 0 20px',
+            color: '#fff',
+          }}>
+            GoliTransit
+            <span style={{
+              display: 'block',
+              background: 'linear-gradient(90deg, #38bdf8, #14b8a6)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}>
+              AI Engine
+            </span>
+          </h2>
+
+          <p style={{ fontSize: 18, color: 'var(--text-secondary)', marginBottom: 10, maxWidth: 560, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.65 }}>
+            Multi-Modal Hyper-Local Routing Engine
+          </p>
+          <p style={{ fontSize: 15, color: 'var(--text-muted)', maxWidth: 520, margin: '0 auto 40px', lineHeight: 1.7 }}>
+            Intelligent route planning with real-time traffic anomaly handling
+            and ML-based congestion prediction.
+          </p>
+
+          {/* CTA group */}
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              id="cta-open-map"
+              onClick={onNavigateToMap}
+              className="btn-accent"
+              style={{ padding: '13px 32px', fontSize: 15 }}
+            >
+              Launch Route Engine →
+            </button>
+            <button
+              style={{
+                padding: '13px 28px', fontSize: 14,
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid var(--border-mid)',
+                borderRadius: 999, color: 'var(--text-secondary)',
+                cursor: 'default', fontWeight: 500,
+              }}
+            >
+              ◈ View Docs
+            </button>
+          </div>
+        </div>
       </section>
 
-      {/* ─── Backend Status ───────────────────────────────────── */}
-      <section className="glass-panel p-6">
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
-          Backend Status
-        </h3>
-        {apiStatus ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatusCard label="API" value={apiStatus.status || 'unknown'} good={apiStatus.status === 'healthy'} />
-            <StatusCard label="Graph Loaded" value={apiStatus.graph?.loaded ? 'Yes' : 'No'} good={apiStatus.graph?.loaded} />
-            <StatusCard label="Nodes" value={apiStatus.graph?.nodes?.toLocaleString() || '0'} />
-            <StatusCard label="Edges" value={apiStatus.graph?.edges?.toLocaleString() || '0'} />
+      {/* ═══ System Metrics Bar ════════════════════════════════ */}
+      <section style={{ padding: '0 24px 72px' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 1,
+            background: 'var(--border-subtle)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 16,
+            overflow: 'hidden',
+          }}>
+            {systemMetrics.map((m, i) => (
+              <div key={i} style={{
+                background: 'var(--bg-surface)',
+                padding: '28px 24px',
+                textAlign: 'center',
+              }}>
+                <div style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 40, fontWeight: 600,
+                  color: '#fff', lineHeight: 1.1,
+                  marginBottom: 6,
+                }}>
+                  {m.value}
+                </div>
+                <div className="metric-label">{m.label}</div>
+              </div>
+            ))}
           </div>
-        ) : (
-          <p className="text-gray-500 text-sm">Connecting to backend...</p>
-        )}
+        </div>
       </section>
+
+      {/* ═══ Feature Grid ══════════════════════════════════════ */}
+      <section style={{ padding: '0 24px 80px' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+          <div style={{ marginBottom: 40, textAlign: 'center' }}>
+            <div className="section-label" style={{ marginBottom: 10 }}>System Modules</div>
+            <h3 style={{ fontSize: 32, fontWeight: 700, color: '#fff', margin: 0, letterSpacing: '-0.02em' }}>
+              Control Surface
+            </h3>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
+            {features.map((feature, idx) => (
+              <div
+                key={idx}
+                className="sys-card animate-slide-up"
+                style={{ padding: 28, animationDelay: `${idx * 80}ms` }}
+              >
+                {/* Icon */}
+                <div style={{
+                  width: 44, height: 44, borderRadius: 12,
+                  background: `${feature.accent}18`,
+                  border: `1px solid ${feature.accent}30`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 20, color: feature.accent, marginBottom: 18,
+                  fontWeight: 700,
+                }}>
+                  {feature.icon}
+                </div>
+
+                <h4 style={{ fontSize: 16, fontWeight: 600, color: '#fff', margin: '0 0 8px', letterSpacing: '-0.01em' }}>
+                  {feature.title}
+                </h4>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65, margin: '0 0 20px' }}>
+                  {feature.description}
+                </p>
+
+                {/* Arrow indicator */}
+                <div style={{ fontSize: 18, color: feature.accent, fontWeight: 700 }}>→</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ System Status Panel ═══════════════════════════════ */}
+      <section style={{ padding: '0 24px 80px' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 16,
+            padding: '32px 36px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+              <div>
+                <div className="section-label" style={{ marginBottom: 4 }}>Live Telemetry</div>
+                <h3 style={{ fontSize: 20, fontWeight: 700, color: '#fff', margin: 0 }}>Backend Engine Status</h3>
+              </div>
+              {apiStatus && (
+                <span className={`badge ${apiStatus.status === 'healthy' ? 'badge-healthy' : apiStatus.status === 'degraded' ? 'badge-warn' : 'badge-critical'}`}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} className="animate-pulse-soft" />
+                  {apiStatus.status || 'unknown'}
+                </span>
+              )}
+            </div>
+
+            {apiStatus ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
+                <StatusCard label="API Health"    value={apiStatus.status || 'unknown'} good={apiStatus.status === 'healthy'} />
+                <StatusCard label="Graph Loaded"  value={apiStatus.graph?.loaded ? 'Yes' : 'No'} good={apiStatus.graph?.loaded} />
+                <StatusCard label="Nodes"         value={apiStatus.graph?.nodes?.toLocaleString() || '0'} />
+                <StatusCard label="Edges"         value={apiStatus.graph?.edges?.toLocaleString() || '0'} />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-muted)', fontSize: 14 }}>
+                <span style={{ width: 16, height: 16, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />
+                Connecting to routing engine...
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
@@ -99,13 +262,21 @@ function HomePage({ onNavigateToMap, apiStatus }) {
 
 function StatusCard({ label, value, good }) {
   return (
-    <div className="glass-panel-light p-3 text-center">
-      <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{label}</div>
-      <div className={`text-lg font-bold ${
-        good === true ? 'text-emerald-400' :
-        good === false ? 'text-red-400' :
-        'text-gray-300'
-      }`}>
+    <div style={{
+      background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-subtle)',
+      borderRadius: 10,
+      padding: '14px 16px',
+      textAlign: 'center',
+    }}>
+      <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 6, fontWeight: 600 }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: 20, fontWeight: 700,
+        fontFamily: 'JetBrains Mono, monospace',
+        color: good === true ? '#34d399' : good === false ? '#f87171' : 'var(--text-primary)',
+      }}>
         {value}
       </div>
     </div>

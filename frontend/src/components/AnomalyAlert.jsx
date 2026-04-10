@@ -18,77 +18,137 @@ function AnomalyAlert({ anomalies }) {
   if (!anomalies || anomalies.length === 0) return null;
 
   return (
-    <div className="space-y-2 animate-slide-up">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-        <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse-soft" />
-        Active Anomalies ({anomalies.length})
-      </h3>
+    <div className="animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-      {anomalies.map((anomaly) => (
-        <div
-          key={anomaly.anomaly_id}
-          className={`p-3 rounded-lg border text-sm animate-fade-in ${getSeverityStyle(anomaly.severity)}`}
-        >
-          <div className="flex items-center justify-between mb-1">
-            <span className="flex items-center gap-1.5">
-              <span>{getTypeIcon(anomaly.type)}</span>
-              <span className="font-medium capitalize">{anomaly.type}</span>
-            </span>
-            <SeverityBadge severity={anomaly.severity} />
+      {/* Console header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '7px 12px',
+        background: 'rgba(245,158,11,0.09)',
+        border: '1px solid rgba(245,158,11,0.22)',
+        borderRadius: 12,
+      }}>
+        <span style={{
+          width: 7, height: 7, borderRadius: '50%',
+          background: '#f59e0b',
+          boxShadow: '0 0 8px rgba(245,158,11,0.80)',
+          display: 'inline-block', flexShrink: 0,
+        }} className="animate-pulse-soft" />
+        <span style={{
+          fontSize: 10, fontWeight: 700,
+          textTransform: 'uppercase', letterSpacing: '0.12em',
+          color: '#f59e0b',
+          fontFamily: 'JetBrains Mono, monospace',
+        }}>
+          Anomaly Console — {anomalies.length} Active
+        </span>
+      </div>
+
+      {/* Anomaly cards */}
+      {anomalies.map((anomaly) => {
+        const tok = getSeverityTokens(anomaly.severity);
+        return (
+          <div
+            key={anomaly.anomaly_id}
+            className="animate-fade-in"
+            style={{
+              padding: '12px 14px 12px 18px',
+              background: tok.bg,
+              border: `1px solid ${tok.border}`,
+              borderRadius: 14,
+              position: 'relative', overflow: 'hidden',
+            }}
+          >
+            {/* Left severity bar */}
+            <div style={{
+              position: 'absolute', left: 0, top: 4, bottom: 4, width: 3,
+              background: tok.accent, borderRadius: 99,
+              boxShadow: `0 0 8px ${tok.accent}80`,
+            }} />
+
+            {/* Top row */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: 6,
+            }}>
+              <span style={{
+                display: 'flex', alignItems: 'center', gap: 7,
+                fontSize: 13, color: tok.text, fontWeight: 600,
+              }}>
+                <span style={{ fontSize: 14 }}>{getTypeIcon(anomaly.type)}</span>
+                <span style={{ textTransform: 'capitalize' }}>{anomaly.type}</span>
+              </span>
+              <SeverityBadge severity={anomaly.severity} />
+            </div>
+
+            {/* Description */}
+            {anomaly.description && (
+              <p style={{
+                fontSize: 11, color: '#a3a3a3',
+                lineHeight: 1.55, margin: '0 0 8px',
+              }}>
+                {anomaly.description}
+              </p>
+            )}
+
+            {/* Footer meta */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              fontSize: 10, color: '#525252',
+              fontFamily: 'JetBrains Mono, monospace',
+            }}>
+              <span>{anomaly.affected_edges?.length || 0} edge(s) affected</span>
+              <span style={{ color: tok.accent }}>{anomaly.weight_multiplier}× weight</span>
+            </div>
           </div>
-          {anomaly.description && (
-            <p className="text-xs opacity-80 mt-1">{anomaly.description}</p>
-          )}
-          <div className="flex items-center justify-between mt-2 text-[10px] opacity-60">
-            <span>{anomaly.affected_edges?.length || 0} edge(s) affected</span>
-            <span>{anomaly.weight_multiplier}x weight</span>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
 
-// ─── Sub-Components ──────────────────────────────────────────────
+// ─── Sub-Components ───────────────────────────────────────────────
 
 function SeverityBadge({ severity }) {
-  const colors = {
-    low: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    medium: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-    high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-    critical: 'bg-red-500/20 text-red-400 border-red-500/30',
+  const styles = {
+    low:      { bg: 'rgba(56,189,248,0.12)',  color: '#38bdf8', border: 'rgba(56,189,248,0.28)' },
+    medium:   { bg: 'rgba(245,158,11,0.12)',  color: '#fbbf24', border: 'rgba(245,158,11,0.28)' },
+    high:     { bg: 'rgba(249,115,22,0.12)',  color: '#fb923c', border: 'rgba(249,115,22,0.28)' },
+    critical: { bg: 'rgba(239,68,68,0.12)',   color: '#f87171', border: 'rgba(239,68,68,0.28)' },
   };
-
+  const s = styles[severity] || styles.low;
   return (
-    <span className={`px-2 py-0.5 text-[10px] font-semibold uppercase rounded-full border ${colors[severity] || colors.low}`}>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center',
+      padding: '2px 9px',
+      background: s.bg,
+      border: `1px solid ${s.border}`,
+      borderRadius: 999,
+      fontSize: 9, fontWeight: 800,
+      letterSpacing: '0.10em', textTransform: 'uppercase',
+      color: s.color,
+      fontFamily: 'JetBrains Mono, monospace',
+    }}>
       {severity}
     </span>
   );
 }
 
 
-// ─── Helpers ─────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────
 
-function getSeverityStyle(severity) {
-  const styles = {
-    low: 'bg-blue-500/5 border-blue-500/20 text-blue-300',
-    medium: 'bg-yellow-500/5 border-yellow-500/20 text-yellow-300',
-    high: 'bg-orange-500/5 border-orange-500/20 text-orange-300',
-    critical: 'bg-red-500/5 border-red-500/20 text-red-300',
-  };
-  return styles[severity] || styles.low;
+function getSeverityTokens(severity) {
+  return ({
+    low:      { bg: 'rgba(56,189,248,0.05)', border: 'rgba(56,189,248,0.16)', text: '#7dd3fc', accent: '#38bdf8' },
+    medium:   { bg: 'rgba(245,158,11,0.05)', border: 'rgba(245,158,11,0.16)', text: '#fcd34d', accent: '#f59e0b' },
+    high:     { bg: 'rgba(249,115,22,0.06)', border: 'rgba(249,115,22,0.18)', text: '#fdba74', accent: '#f97316' },
+    critical: { bg: 'rgba(239,68,68,0.07)',  border: 'rgba(239,68,68,0.20)', text: '#fca5a5', accent: '#ef4444' },
+  })[severity] || { bg: 'rgba(56,189,248,0.05)', border: 'rgba(56,189,248,0.16)', text: '#7dd3fc', accent: '#38bdf8' };
 }
 
 function getTypeIcon(type) {
-  const icons = {
-    accident: '🚨',
-    closure: '🚧',
-    congestion: '🐌',
-    weather: '🌧️',
-    construction: '🏗️',
-  };
-  return icons[type] || '⚠️';
+  return ({ accident: '🚨', closure: '🚧', congestion: '🐌', weather: '🌧️', construction: '🏗️' })[type] || '⚠';
 }
 
 export default AnomalyAlert;
