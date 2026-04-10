@@ -89,27 +89,25 @@ jobs:
         run: npm install --global vercel@latest
 
       - name: Pull Vercel environment information
-        working-directory: frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+        run: cd frontend && vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build frontend for Vercel
-        working-directory: frontend
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_BASE_PATH: /
         run: |
+          cd frontend
           npm ci
           vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
 
       - name: Deploy to Vercel
-        working-directory: frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        run: cd frontend && vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
 
   deploy-frontend-preview:
     name: Deploy frontend preview to Vercel
@@ -131,28 +129,27 @@ jobs:
         run: npm install --global vercel@latest
 
       - name: Pull Vercel preview environment
-        working-directory: frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+        run: cd frontend && vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
 
       - name: Build frontend preview
-        working-directory: frontend
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_BASE_PATH: /
         run: |
+          cd frontend
           npm ci
           vercel build --token="${{ secrets.VERCEL_TOKEN }}"
 
       - name: Deploy preview to Vercel
         id: preview_deploy
-        working-directory: frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
+          cd frontend
           PREVIEW_URL=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
 

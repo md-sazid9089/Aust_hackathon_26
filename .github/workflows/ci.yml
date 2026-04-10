@@ -26,11 +26,12 @@ jobs:
           pip install -r backend/requirements.txt
 
       - name: Run backend tests
-        working-directory: backend
         env:
-          CONFIG_PATH: ../config.json
+          CONFIG_PATH: ${{ github.workspace }}/config.json
           DATABASE_URL: sqlite+pysqlite:///:memory:
-        run: python -m pytest tests -v
+        run: |
+          cd backend
+          python -m pytest tests -v
 
   frontend-build:
     name: Frontend build
