@@ -18,6 +18,45 @@ class LatLng(BaseModel):
     lng: float = Field(..., ge=-180, le=180, description="Longitude")
 
 
+class VehicleOption(BaseModel):
+    """Vehicle option for a route segment with travel time estimate."""
+    vehicle: str = Field(..., description="Vehicle type (car, bike, walk, transit, rickshaw)")
+    travel_time_s: float = Field(..., description="Estimated travel time in seconds for this segment")
+    is_recommended: bool = Field(False, description="Whether this is the fastest vehicle for this segment")
+    distance_m: float = Field(0.0, description="Distance of the segment in meters")
+
+
+class SegmentSuggestion(BaseModel):
+    """Vehicle suggestions for a single route segment/edge."""
+    segment_index: int = Field(..., description="Index of the segment in the route")
+    from_node: Optional[str] = Field(None, description="Start node ID")
+    to_node: Optional[str] = Field(None, description="End node ID")
+    distance_m: float = Field(..., description="Distance of this segment")
+    road_type: Optional[str] = Field(None, description="OSM road type")
+    vehicle_options: list[VehicleOption] = Field(default_factory=list, description="Available vehicles for this segment")
+    recommended_vehicle: str = Field(..., description="Fastest vehicle for this segment")
+
+
+class PathWithVehicleSuggestions(BaseModel):
+    """A route path with vehicle suggestions per segment."""
+    route_type: str = Field(..., description="'shortest_distance' or 'fastest_time'")
+    total_distance_m: float = Field(0.0, description="Total distance in meters")
+    total_duration_s: float = Field(0.0, description="Total duration in seconds with optimal vehicle choices")
+    geometry: list[LatLng] = Field(default_factory=list, description="Complete route polyline")
+    segments: list[SegmentSuggestion] = Field(default_factory=list, description="Vehicle suggestions per segment")
+    legs: list["RouteLeg"] = Field(default_factory=list, description="Full legs data")
+
+
+class PathWithVehicleSuggestions(BaseModel):
+    """A route path with vehicle suggestions per segment."""
+    route_type: str = Field(..., description="'shortest_distance' or 'fastest_time'")
+    total_distance_m: float = Field(0.0, description="Total distance in meters")
+    total_duration_s: float = Field(0.0, description="Total duration in seconds with optimal vehicle choices")
+    geometry: list[LatLng] = Field(default_factory=list, description="Complete route polyline")
+    segments: list[SegmentSuggestion] = Field(default_factory=list, description="Vehicle suggestions per segment")
+    legs: list["RouteLeg"] = Field(default_factory=list, description="Full legs data")
+
+
 class RouteRequest(BaseModel):
     """
     Input for a route computation.
@@ -86,4 +125,8 @@ class RouteResponse(BaseModel):
     alternatives: list[list[RouteLeg]] = Field(
         default_factory=list,
         description="Alternative route options",
+    )
+    multimodal_suggestions: Optional[list[PathWithVehicleSuggestions]] = Field(
+        default=None,
+        description="Vehicle suggestions for shortest distance and fastest time routes",
     )
