@@ -14,8 +14,9 @@ const AVAILABLE_MODES = [
   { id: 'rickshaw', label: 'Rickshaw', icon: '\u{1F6FA}' },
 ];
 
-function ModeSelector({ selectedModes, onChange }) {
+function ModeSelector({ selectedModes, onChange, routeMode = 'single', onRouteModeChange }) {
   const selectSingle = (modeId) => onChange([modeId]);
+  const isMultimodal = routeMode === 'multimodal';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -59,6 +60,51 @@ function ModeSelector({ selectedModes, onChange }) {
         </div>
       </div>
 
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={() => onRouteModeChange && onRouteModeChange('single')}
+          style={{
+            flex: 1,
+            padding: '8px 10px',
+            borderRadius: 10,
+            border: routeMode === 'single'
+              ? '1.5px solid rgba(34,197,94,0.5)'
+              : '1.5px solid rgba(255,255,255,0.08)',
+            background: routeMode === 'single'
+              ? 'rgba(34,197,94,0.16)'
+              : 'rgba(255,255,255,0.03)',
+            color: routeMode === 'single' ? '#86efac' : '#a3a3a3',
+            fontWeight: 700,
+            fontSize: 11,
+            fontFamily: 'Inter, system-ui, sans-serif',
+            cursor: 'pointer',
+          }}
+        >
+          Single Mode
+        </button>
+        <button
+          onClick={() => onRouteModeChange && onRouteModeChange('multimodal')}
+          style={{
+            flex: 1,
+            padding: '8px 10px',
+            borderRadius: 10,
+            border: routeMode === 'multimodal'
+              ? '1.5px solid rgba(59,130,246,0.5)'
+              : '1.5px solid rgba(255,255,255,0.08)',
+            background: routeMode === 'multimodal'
+              ? 'rgba(59,130,246,0.16)'
+              : 'rgba(255,255,255,0.03)',
+            color: routeMode === 'multimodal' ? '#93c5fd' : '#a3a3a3',
+            fontWeight: 700,
+            fontSize: 11,
+            fontFamily: 'Inter, system-ui, sans-serif',
+            cursor: 'pointer',
+          }}
+        >
+          Multimodal
+        </button>
+      </div>
+
       {/* Mode grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 7 }}>
         {AVAILABLE_MODES.map((mode) => {
@@ -70,6 +116,7 @@ function ModeSelector({ selectedModes, onChange }) {
               key={mode.id}
               id={`mode-btn-${mode.id}`}
               onClick={() => selectSingle(mode.id)}
+              disabled={isMultimodal}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -82,7 +129,7 @@ function ModeSelector({ selectedModes, onChange }) {
                 fontWeight: 700,
                 fontFamily: 'Inter, system-ui, sans-serif',
                 letterSpacing: '0.01em',
-                cursor: 'pointer',
+                cursor: isMultimodal ? 'not-allowed' : 'pointer',
                 border: isPrimary
                   ? '1.5px solid rgba(139,92,246,0.55)'
                   : isActive
@@ -94,11 +141,12 @@ function ModeSelector({ selectedModes, onChange }) {
                   : isActive
                     ? 'rgba(139,92,246,0.12)'
                     : 'rgba(255,255,255,0.03)',
-                color: isPrimary ? '#fff' : isActive ? '#c4b5fd' : '#737373',
+                color: isMultimodal ? '#4b5563' : (isPrimary ? '#fff' : isActive ? '#c4b5fd' : '#737373'),
                 boxShadow: isPrimary
                   ? '0 8px 24px rgba(139,92,246,0.40), inset 0 1px 0 rgba(255,255,255,0.10)'
                   : 'none',
                 transform: isPrimary ? 'translateY(-1px)' : 'none',
+                opacity: isMultimodal ? 0.55 : 1,
               }}
             >
               <span style={{ fontSize: 22, lineHeight: 1 }}>{mode.icon}</span>
@@ -136,7 +184,7 @@ function ModeSelector({ selectedModes, onChange }) {
             fontFamily: 'Inter, system-ui, sans-serif',
             textTransform: 'capitalize',
           }}>
-            {(selectedModes && selectedModes[0]) || 'car'}
+            {isMultimodal ? 'multimodal auto' : ((selectedModes && selectedModes[0]) || 'car')}
           </span>
         </div>
       </div>
