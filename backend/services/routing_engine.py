@@ -16,6 +16,7 @@ from models.route_models import (
     RouteRequest,
     RouteResponse,
     RouteLeg,
+    RouteTrafficEdge,
     ModeSwitch,
     LatLng,
     MultimodalSuggestion,
@@ -25,6 +26,7 @@ from models.route_models import (
 from services.graph_service import graph_service
 from services.ml_integration import ml_integration
 from services.multimodal_dijkstra import multi_modal_dijkstra_with_coords
+from services.traffic_jam_service import traffic_jam_service
 
 
 class RoutingEngine:
@@ -74,6 +76,20 @@ class RoutingEngine:
             else []
         )
 
+        all_traffic_edges: list[dict] = []
+        for leg in legs:
+            all_traffic_edges.extend(
+                [
+                    {
+                        "edge_id": e.edge_id,
+                        "road_type": e.road_type,
+                        "length_m": e.length_m,
+                    }
+                    for e in leg.traffic_edges
+                ]
+            )
+        traffic_prediction = traffic_jam_service.predict_route_jam(all_traffic_edges)
+
         return RouteResponse(
             legs=legs,
             mode_switches=switches,
@@ -83,6 +99,7 @@ class RoutingEngine:
             anomalies_avoided=anomalies_avoided,
             alternatives=alternatives,
             multimodal_suggestions=multimodal_suggestions,
+            traffic_jam_prediction=traffic_prediction,
         )
 
     async def _single_modal(
@@ -175,6 +192,7 @@ class RoutingEngine:
             raise ValueError("Computed route is invalid.")
 
         geometry: list[LatLng] = []
+        traffic_edges: list[RouteTrafficEdge] = []
         total_distance_m = 0.0
         total_duration_s = 0.0
 
@@ -187,6 +205,16 @@ class RoutingEngine:
                 edge_data.get(f"{mode}_travel_time")
                 or edge_data.get("travel_time")
                 or 0.0
+            )
+            chosen_key = edge_data.get("_key")
+            if chosen_key is None:
+                chosen_key = 0
+            traffic_edges.append(
+                RouteTrafficEdge(
+                    edge_id=f"{u}->{v}:{chosen_key}",
+                    road_type=self._road_type(edge_data),
+                    length_m=float(edge_data.get("length") or 0.0),
+                )
             )
 
             edge_points = self._edge_geometry_points(graph, u, v, edge_data)
@@ -215,6 +243,7 @@ class RoutingEngine:
             distance_m=total_distance_m,
             duration_s=total_duration_s,
             cost=total_cost,
+            traffic_edges=traffic_edges,
             instructions=[
                 f"Start at ({origin.lat:.5f}, {origin.lng:.5f})",
                 f"Follow the shortest {mode} route on roads",
@@ -312,8 +341,11 @@ class RoutingEngine:
             if w < best_weight:
                 best_weight = w
                 best_key = key
-
-        return data[best_key] if best_key is not None else next(iter(data.values()))
+        best_edge = data[best_key] if best_key is not None else next(iter(data.values()))
+        if best_key is not None:
+            best_edge = dict(best_edge)
+            best_edge["_key"] = best_key
+        return best_edge
 
     def _edge_geometry_points(
         self, graph: nx.MultiDiGraph, u, v, edge_data: dict
