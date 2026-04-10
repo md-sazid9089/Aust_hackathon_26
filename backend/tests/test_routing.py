@@ -20,13 +20,10 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_health_check(client):
-    """GET /health should return status and graph info."""
+    """GET /health should return the canonical ok payload."""
     response = await client.get("/health")
     assert response.status_code == 200
-    data = response.json()
-    assert data["service"] == "GoliTransit API"
-    assert "status" in data
-    assert "graph" in data
+    assert response.json() == {"status": "ok"}
 
 
 # ─── Single-Modal Routing ───────────────────────────────────────
