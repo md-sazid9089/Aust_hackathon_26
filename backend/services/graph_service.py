@@ -61,7 +61,17 @@ def _parse_maxspeed_kmh(maxspeed: object) -> Optional[float]:
 def _fallback_speed_for_road(road_type: str) -> float:
     major = {"motorway", "trunk", "primary"}
     secondary = {"secondary", "tertiary"}
-    small = {"residential", "service", "unclassified", "road", "living_street", "path", "track", "footway", "cycleway"}
+    small = {
+        "residential",
+        "service",
+        "unclassified",
+        "road",
+        "living_street",
+        "path",
+        "track",
+        "footway",
+        "cycleway",
+    }
 
     if road_type in major:
         return 50.0
@@ -129,7 +139,9 @@ class GraphService:
         self._graph = graph
         self._normalize_edge_attributes()
         self._loaded = True
-        print(f"[GraphService] Graph loaded — {self.node_count()} nodes, {self.edge_count()} edges")
+        print(
+            f"[GraphService] Graph loaded — {self.node_count()} nodes, {self.edge_count()} edges"
+        )
 
     def _normalize_edge_attributes(self):
         if not self._graph:
@@ -138,8 +150,13 @@ class GraphService:
         for _, _, _, data in self._graph.edges(keys=True, data=True):
             length_m = float(data.get("length") or 0.0)
             road_type = _first_highway_value(data.get("highway"))
-            maxspeed_kmh = _parse_maxspeed_kmh(data.get("maxspeed")) or _fallback_speed_for_road(road_type)
-            base_travel_time_s = length_m / (maxspeed_kmh / 3.6) if maxspeed_kmh > 0 else 1.0
+            service_tag = str(data.get("service", "")).lower()
+            maxspeed_kmh = _parse_maxspeed_kmh(
+                data.get("maxspeed")
+            ) or _fallback_speed_for_road(road_type)
+            base_travel_time_s = (
+                length_m / (maxspeed_kmh / 3.6) if maxspeed_kmh > 0 else 1.0
+            )
 
             data["length"] = length_m
             data["road_type"] = road_type
@@ -150,14 +167,52 @@ class GraphService:
             data["anomaly_multiplier"] = 1.0
             data["ml_predicted"] = False
 
+            # ── Spec-mandated OSM tag constraints ────────────────
+            # Start with config-based permissions, then override per OSM tags
             for mode, mode_cfg in settings.vehicle_types.items():
                 allowed_road_types = set(mode_cfg.get("allowed_road_types", []))
-                mode_speed = float(mode_cfg.get("default_speed_kmh", maxspeed_kmh) or maxspeed_kmh)
+                mode_speed = float(
+                    mode_cfg.get("default_speed_kmh", maxspeed_kmh) or maxspeed_kmh
+                )
                 mode_allowed = road_type in allowed_road_types
-                mode_time_s = length_m / (mode_speed / 3.6) if mode_speed > 0 else base_travel_time_s
+                mode_time_s = (
+                    length_m / (mode_speed / 3.6)
+                    if mode_speed > 0
+                    else base_travel_time_s
+                )
 
                 data[f"{mode}_allowed"] = mode_allowed
                 data[f"{mode}_travel_time"] = mode_time_s
+
+            # OSM tag overrides (hackathon design rules)
+            # 1. highway=footway → car NOT allowed
+            if road_type == "footway":
+                data["car_allowed"] = False
+                data["transit_allowed"] = False
+
+            # 2. service=alley → only rickshaw + walk
+            if service_tag == "alley" or road_type == "alley":
+                data["car_allowed"] = False
+                data["bike_allowed"] = False
+                data["transit_allowed"] = False
+                data["rickshaw_allowed"] = True
+                data["walk_allowed"] = True
+
+            # 3. highway=motorway → car only
+            if road_type in ("motorway", "motorway_link"):
+                data["rickshaw_allowed"] = False
+                data["walk_allowed"] = False
+                data["bike_allowed"] = False
+                data["transit_allowed"] = False
+                data["car_allowed"] = True
+
+            # ── Build spec-compatible weights & constraints dicts ─
+            data["base_weight"] = length_m
+            data["weights"] = {}
+            data["constraints"] = {}
+            for mode in settings.vehicle_types:
+                data["weights"][mode] = float(data.get(f"{mode}_travel_time", base_travel_time_s))
+                data["constraints"][f"{mode}_allowed"] = bool(data.get(f"{mode}_allowed", False))
 
     def _annotate_graph_edges(self):
         """Backward-compatible alias used by existing tests and callers."""
@@ -165,6 +220,10 @@ class GraphService:
 
     def is_loaded(self) -> bool:
         return self._loaded
+
+    def get_graph(self) -> Optional[nx.MultiDiGraph]:
+        """Return the underlying NetworkX graph for direct access."""
+        return self._graph
 
     def node_count(self) -> int:
         if not self._loaded or self._graph is None:
@@ -222,7 +281,11 @@ class GraphService:
         if self._graph.has_edge(source, target):
             for key in self._graph[source][target]:
                 edge_data = self._graph[source][target][key]
-                base = float(edge_data.get("base_travel_time") or edge_data.get("travel_time") or 0.0)
+                base = float(
+                    edge_data.get("base_travel_time")
+                    or edge_data.get("travel_time")
+                    or 0.0
+                )
                 edge_data["travel_time"] = base * multiplier
                 edge_data["anomaly_multiplier"] = multiplier
 
@@ -233,7 +296,11 @@ class GraphService:
         if self._graph.has_edge(source, target):
             for key in self._graph[source][target]:
                 edge_data = self._graph[source][target][key]
-                edge_data["travel_time"] = float(edge_data.get("base_travel_time") or edge_data.get("travel_time") or 0.0)
+                edge_data["travel_time"] = float(
+                    edge_data.get("base_travel_time")
+                    or edge_data.get("travel_time")
+                    or 0.0
+                )
                 edge_data["anomaly_multiplier"] = 1.0
 
     def set_ml_predicted_weight(self, source: str, target: str, predicted_time: float):
@@ -246,15 +313,23 @@ class GraphService:
                 edge_data["travel_time"] = float(predicted_time)
                 edge_data["ml_predicted"] = True
 
-    def get_snapshot(self, include_edges: bool = False, bbox: Optional[tuple] = None) -> GraphSnapshot:
+    def get_snapshot(
+        self, include_edges: bool = False, bbox: Optional[tuple] = None
+    ) -> GraphSnapshot:
         if not self._graph:
-            return GraphSnapshot(node_count=0, edge_count=0, nodes=[], edges=[], anomaly_affected_edges=[])
+            return GraphSnapshot(
+                node_count=0,
+                edge_count=0,
+                nodes=[],
+                edges=[],
+                anomaly_affected_edges=[],
+            )
 
         nodes: list[GraphNode] = []
         edges: list[GraphEdge] = []
         anomaly_affected_edges: list[str] = []
 
-        south, west, north, east = (bbox or (None, None, None, None))
+        south, west, north, east = bbox or (None, None, None, None)
 
         def in_bbox(lat: float, lng: float) -> bool:
             if bbox is None:
@@ -271,8 +346,12 @@ class GraphService:
             for u, v, _, data in self._graph.edges(keys=True, data=True):
                 u_data = self._graph.nodes.get(u, {})
                 v_data = self._graph.nodes.get(v, {})
-                u_lat, u_lng = float(u_data.get("y") or 0.0), float(u_data.get("x") or 0.0)
-                v_lat, v_lng = float(v_data.get("y") or 0.0), float(v_data.get("x") or 0.0)
+                u_lat, u_lng = float(u_data.get("y") or 0.0), float(
+                    u_data.get("x") or 0.0
+                )
+                v_lat, v_lng = float(v_data.get("y") or 0.0), float(
+                    v_data.get("x") or 0.0
+                )
 
                 if not (in_bbox(u_lat, u_lng) or in_bbox(v_lat, v_lng)):
                     continue
@@ -290,7 +369,11 @@ class GraphService:
                         travel_time_s=float(data.get("travel_time") or 0.0),
                         base_travel_time_s=float(data.get("base_travel_time") or 0.0),
                         road_type=str(data.get("road_type") or "unknown"),
-                        speed_limit_kmh=float(data.get("speed_limit_kmh")) if data.get("speed_limit_kmh") is not None else None,
+                        speed_limit_kmh=(
+                            float(data.get("speed_limit_kmh"))
+                            if data.get("speed_limit_kmh") is not None
+                            else None
+                        ),
                         anomaly_multiplier=multiplier,
                         ml_predicted=bool(data.get("ml_predicted") or False),
                     )

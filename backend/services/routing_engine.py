@@ -12,7 +12,13 @@ from typing import Callable
 import networkx as nx
 
 from config import settings
-from models.route_models import RouteRequest, RouteResponse, RouteLeg, ModeSwitch, LatLng
+from models.route_models import (
+    RouteRequest,
+    RouteResponse,
+    RouteLeg,
+    ModeSwitch,
+    LatLng,
+)
 from services.graph_service import graph_service
 from services.ml_integration import ml_integration
 
@@ -48,8 +54,12 @@ class RoutingEngine:
             )
 
         total_dist = sum(leg.distance_m for leg in legs)
-        total_dur = sum(leg.duration_s for leg in legs) + sum(sw.penalty_time_s for sw in switches)
-        total_cost = sum(leg.cost for leg in legs) + sum(sw.penalty_cost for sw in switches)
+        total_dur = sum(leg.duration_s for leg in legs) + sum(
+            sw.penalty_time_s for sw in switches
+        )
+        total_cost = sum(leg.cost for leg in legs) + sum(
+            sw.penalty_cost for sw in switches
+        )
 
         num_alts = request.max_alternatives or self._max_alts
         alternatives = await self._compute_alternatives(request, num_alts)
@@ -75,7 +85,9 @@ class RoutingEngine:
         del avoid_anomalies  # Placeholder until anomaly filtering is added.
 
         if mode not in settings.vehicle_types:
-            raise ValueError(f"Unknown transport mode: '{mode}'. Available: {list(settings.vehicle_types.keys())}")
+            raise ValueError(
+                f"Unknown transport mode: '{mode}'. Available: {list(settings.vehicle_types.keys())}"
+            )
 
         if not graph_service.is_loaded():
             return [self._build_synthetic_leg(mode, origin, destination)], [], 0
@@ -95,7 +107,13 @@ class RoutingEngine:
         weight_fn = self._build_weight_fn(mode, optimize)
 
         try:
-            path = nx.shortest_path(graph, source=origin_node, target=dest_node, weight=weight_fn, method="dijkstra")
+            path = nx.shortest_path(
+                graph,
+                source=origin_node,
+                target=dest_node,
+                weight=weight_fn,
+                method="dijkstra",
+            )
         except nx.NetworkXNoPath:
             return [self._build_synthetic_leg(mode, origin, destination)], [], 0
 
@@ -111,11 +129,18 @@ class RoutingEngine:
             v = path[i + 1]
             edge_data = self._best_edge_data(graph, u, v, weight_fn)
             total_distance_m += float(edge_data.get("length") or 0.0)
-            total_duration_s += float(edge_data.get(f"{mode}_travel_time") or edge_data.get("travel_time") or 0.0)
+            total_duration_s += float(
+                edge_data.get(f"{mode}_travel_time")
+                or edge_data.get("travel_time")
+                or 0.0
+            )
 
             edge_points = self._edge_geometry_points(graph, u, v, edge_data)
             if geometry and edge_points:
-                if geometry[-1].lat == edge_points[0].lat and geometry[-1].lng == edge_points[0].lng:
+                if (
+                    geometry[-1].lat == edge_points[0].lat
+                    and geometry[-1].lng == edge_points[0].lng
+                ):
                     geometry.extend(edge_points[1:])
                 else:
                     geometry.extend(edge_points)
@@ -125,7 +150,9 @@ class RoutingEngine:
         if len(geometry) < 2:
             geometry = [origin, destination]
 
-        cost_per_km = float(settings.vehicle_types[mode].get("fuel_cost_per_km", 0.0) or 0.0)
+        cost_per_km = float(
+            settings.vehicle_types[mode].get("fuel_cost_per_km", 0.0) or 0.0
+        )
         total_cost = (total_distance_m / 1000.0) * cost_per_km
 
         leg = RouteLeg(
@@ -156,7 +183,11 @@ class RoutingEngine:
 
         current_pos = origin
         for i, mode in enumerate(modes):
-            leg_dest = destination if i == len(modes) - 1 else self._find_transfer_point(current_pos, destination, i, len(modes))
+            leg_dest = (
+                destination
+                if i == len(modes) - 1
+                else self._find_transfer_point(current_pos, destination, i, len(modes))
+            )
 
             leg_legs, _, avoided = await self._single_modal(
                 origin=current_pos,
@@ -191,8 +222,12 @@ class RoutingEngine:
             best = float("inf")
             for edge in data.values():
                 length = float(edge.get("length") or 0.0)
-                travel_time = float(edge.get(f"{mode}_travel_time") or edge.get("travel_time") or 0.0)
-                cost_per_km = float(settings.vehicle_types[mode].get("fuel_cost_per_km", 0.0) or 0.0)
+                travel_time = float(
+                    edge.get(f"{mode}_travel_time") or edge.get("travel_time") or 0.0
+                )
+                cost_per_km = float(
+                    settings.vehicle_types[mode].get("fuel_cost_per_km", 0.0) or 0.0
+                )
                 cost = (length / 1000.0) * cost_per_km
 
                 if optimize == "distance":
@@ -208,7 +243,9 @@ class RoutingEngine:
 
         return weight
 
-    def _best_edge_data(self, graph: nx.MultiDiGraph, u, v, weight_fn: Callable) -> dict:
+    def _best_edge_data(
+        self, graph: nx.MultiDiGraph, u, v, weight_fn: Callable
+    ) -> dict:
         data = graph.get_edge_data(u, v) or {}
         if not data:
             return {}
@@ -224,7 +261,9 @@ class RoutingEngine:
 
         return data[best_key] if best_key is not None else next(iter(data.values()))
 
-    def _edge_geometry_points(self, graph: nx.MultiDiGraph, u, v, edge_data: dict) -> list[LatLng]:
+    def _edge_geometry_points(
+        self, graph: nx.MultiDiGraph, u, v, edge_data: dict
+    ) -> list[LatLng]:
         geom = edge_data.get("geometry")
         points: list[LatLng] = []
 
@@ -237,24 +276,38 @@ class RoutingEngine:
         u_data = graph.nodes.get(u, {})
         v_data = graph.nodes.get(v, {})
         return [
-            LatLng(lat=float(u_data.get("y") or 0.0), lng=float(u_data.get("x") or 0.0)),
-            LatLng(lat=float(v_data.get("y") or 0.0), lng=float(v_data.get("x") or 0.0)),
+            LatLng(
+                lat=float(u_data.get("y") or 0.0), lng=float(u_data.get("x") or 0.0)
+            ),
+            LatLng(
+                lat=float(v_data.get("y") or 0.0), lng=float(v_data.get("x") or 0.0)
+            ),
         ]
 
-    def _find_transfer_point(self, current: LatLng, destination: LatLng, leg_index: int, total_legs: int) -> LatLng:
+    def _find_transfer_point(
+        self, current: LatLng, destination: LatLng, leg_index: int, total_legs: int
+    ) -> LatLng:
         fraction = (leg_index + 1) / total_legs
         return LatLng(
             lat=current.lat + (destination.lat - current.lat) * fraction,
             lng=current.lng + (destination.lng - current.lng) * fraction,
         )
 
-    def _build_synthetic_leg(self, mode: str, origin: LatLng, destination: LatLng) -> RouteLeg:
+    def _build_synthetic_leg(
+        self, mode: str, origin: LatLng, destination: LatLng
+    ) -> RouteLeg:
         """Fallback when graph data is unavailable: direct-line estimate preserving response contract."""
-        distance_m = self._haversine_distance_m(origin.lat, origin.lng, destination.lat, destination.lng)
-        speed_kmh = float(settings.vehicle_types[mode].get("default_speed_kmh", 30.0) or 30.0)
+        distance_m = self._haversine_distance_m(
+            origin.lat, origin.lng, destination.lat, destination.lng
+        )
+        speed_kmh = float(
+            settings.vehicle_types[mode].get("default_speed_kmh", 30.0) or 30.0
+        )
         speed_mps = max(speed_kmh / 3.6, 0.1)
         duration_s = distance_m / speed_mps
-        cost_per_km = float(settings.vehicle_types[mode].get("fuel_cost_per_km", 0.0) or 0.0)
+        cost_per_km = float(
+            settings.vehicle_types[mode].get("fuel_cost_per_km", 0.0) or 0.0
+        )
         cost = (distance_m / 1000.0) * cost_per_km
 
         return RouteLeg(
@@ -270,15 +323,22 @@ class RoutingEngine:
             ],
         )
 
-    def _haversine_distance_m(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    def _haversine_distance_m(
+        self, lat1: float, lon1: float, lat2: float, lon2: float
+    ) -> float:
         r = 6_371_000.0
         phi1, phi2 = math.radians(lat1), math.radians(lat2)
         dphi = math.radians(lat2 - lat1)
         dlambda = math.radians(lon2 - lon1)
-        a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+        a = (
+            math.sin(dphi / 2) ** 2
+            + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+        )
         return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-    async def _compute_alternatives(self, request: RouteRequest, num_alternatives: int) -> list[list[RouteLeg]]:
+    async def _compute_alternatives(
+        self, request: RouteRequest, num_alternatives: int
+    ) -> list[list[RouteLeg]]:
         del request, num_alternatives
         return []
 
