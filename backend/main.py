@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from routes import health, route, anomaly, graph
+from routes.v2 import router as v2_router
 from services.graph_service import graph_service
 
 
@@ -58,3 +59,4 @@ app.include_router(health.router, tags=["Health"])
 app.include_router(route.router, prefix="/route", tags=["Routing"])
 app.include_router(anomaly.router, prefix="/anomaly", tags=["Anomaly"])
 app.include_router(graph.router, prefix="/graph", tags=["Graph"])
+app.include_router(v2_router, prefix="/v2", tags=["V2 — Multi-Modal Dijkstra"])

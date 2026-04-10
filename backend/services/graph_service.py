@@ -22,9 +22,42 @@ def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     phi2 = math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
     dlambda = math.radians(lng2 - lng1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    a = (
+        math.sin(dphi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return r * c
+
+
+def _project_point_to_segment(
+    p_lat: float, p_lng: float,
+    a_lat: float, a_lng: float,
+    b_lat: float, b_lng: float,
+) -> tuple[float, float, float]:
+    """
+    Project point P onto line segment A→B.
+
+    Returns:
+        (fraction, proj_lat, proj_lng)
+        fraction: 0.0 = at A, 1.0 = at B, clamped to [0, 1]
+        proj_lat/proj_lng: the projected point coordinates
+    """
+    dx = b_lng - a_lng
+    dy = b_lat - a_lat
+    len_sq = dx * dx + dy * dy
+
+    if len_sq < 1e-14:
+        # A and B are the same point
+        return 0.0, a_lat, a_lng
+
+    # t = dot(AP, AB) / |AB|^2  → fraction along segment
+    t = ((p_lng - a_lng) * dx + (p_lat - a_lat) * dy) / len_sq
+    t = max(0.0, min(1.0, t))  # clamp to segment
+
+    proj_lat = a_lat + t * dy
+    proj_lng = a_lng + t * dx
+    return t, proj_lat, proj_lng
 
 
 def _first_highway_value(highway: object) -> str:
@@ -118,7 +151,10 @@ class GraphService:
             for node_id, node_data in graph.nodes(data=True):
                 y = float(node_data.get("y") or 0.0)
                 x = float(node_data.get("x") or 0.0)
-                if _haversine_m(self._center_lat, self._center_lng, y, x) > self._radius_m:
+                if (
+                    _haversine_m(self._center_lat, self._center_lng, y, x)
+                    > self._radius_m
+                ):
                     nodes_outside.append(node_id)
 
             if nodes_outside:
@@ -211,8 +247,12 @@ class GraphService:
             data["weights"] = {}
             data["constraints"] = {}
             for mode in settings.vehicle_types:
-                data["weights"][mode] = float(data.get(f"{mode}_travel_time", base_travel_time_s))
-                data["constraints"][f"{mode}_allowed"] = bool(data.get(f"{mode}_allowed", False))
+                data["weights"][mode] = float(
+                    data.get(f"{mode}_travel_time", base_travel_time_s)
+                )
+                data["constraints"][f"{mode}_allowed"] = bool(
+                    data.get(f"{mode}_allowed", False)
+                )
 
     def _annotate_graph_edges(self):
         """Backward-compatible alias used by existing tests and callers."""
@@ -235,13 +275,24 @@ class GraphService:
             return 0
         return self._graph.number_of_edges()
 
-    def get_nearest_node(self, lat: float, lng: float):
-        """Manual nearest-node search to avoid optional KDTree dependencies."""
+    def get_nearest_node(self, lat: float, lng: float, max_distance_m: float = 5000.0):
+        """
+        Find the nearest graph node using Haversine distance.
+
+        Args:
+            lat: User latitude
+            lng: User longitude
+            max_distance_m: Maximum snap distance in meters.
+                            Returns None if closest node is farther.
+
+        Returns:
+            Node ID of the nearest node, or None if no node within threshold.
+        """
         if not self._graph:
             return None
 
         best_node = None
-        best_dist_sq = float("inf")
+        best_dist_m = float("inf")
 
         for node_id, node_data in self._graph.nodes(data=True):
             y = node_data.get("y")
@@ -249,14 +300,105 @@ class GraphService:
             if y is None or x is None:
                 continue
 
-            d_lat = float(y) - lat
-            d_lng = float(x) - lng
-            dist_sq = d_lat * d_lat + d_lng * d_lng
-            if dist_sq < best_dist_sq:
-                best_dist_sq = dist_sq
+            dist_m = _haversine_m(lat, lng, float(y), float(x))
+            if dist_m < best_dist_m:
+                best_dist_m = dist_m
                 best_node = node_id
 
+        # Threshold check: if the closest node is too far, return None
+        if best_dist_m > max_distance_m:
+            return None
+
         return best_node
+
+    def get_nearest_node_with_distance(self, lat: float, lng: float):
+        """
+        Find the nearest graph node and return both the node ID and distance.
+
+        Returns:
+            (node_id, distance_m) tuple, or (None, inf) if graph not loaded.
+        """
+        if not self._graph:
+            return None, float("inf")
+
+        best_node = None
+        best_dist_m = float("inf")
+
+        for node_id, node_data in self._graph.nodes(data=True):
+            y = node_data.get("y")
+            x = node_data.get("x")
+            if y is None or x is None:
+                continue
+
+            dist_m = _haversine_m(lat, lng, float(y), float(x))
+            if dist_m < best_dist_m:
+                best_dist_m = dist_m
+                best_node = node_id
+
+        return best_node, best_dist_m
+
+    def snap_to_nearest_edge(self, lat: float, lng: float):
+        """
+        Find the nearest point on any graph edge (road segment).
+
+        If the user is far from any intersection but close to a road segment,
+        this finds the closest edge and creates a virtual projection point.
+
+        Returns:
+            dict with:
+              - source: source node of nearest edge
+              - target: target node of nearest edge
+              - snap_node: the better endpoint to use (closest of source/target)
+              - distance_m: distance from user to the snap point
+              - fraction: 0.0-1.0 position along the edge
+
+            Returns None if graph not loaded.
+        """
+        if not self._graph:
+            return None
+
+        best_edge = None
+        best_dist = float("inf")
+        best_fraction = 0.0
+
+        for u, v, _, data in self._graph.edges(keys=True, data=True):
+            u_data = self._graph.nodes.get(u, {})
+            v_data = self._graph.nodes.get(v, {})
+
+            u_lat = float(u_data.get("y", 0.0))
+            u_lng = float(u_data.get("x", 0.0))
+            v_lat = float(v_data.get("y", 0.0))
+            v_lng = float(v_data.get("x", 0.0))
+
+            # Project point onto the line segment u->v
+            fraction, proj_lat, proj_lng = _project_point_to_segment(
+                lat, lng, u_lat, u_lng, v_lat, v_lng
+            )
+            dist = _haversine_m(lat, lng, proj_lat, proj_lng)
+
+            if dist < best_dist:
+                best_dist = dist
+                best_edge = (u, v)
+                best_fraction = fraction
+
+        if best_edge is None:
+            return None
+
+        u, v = best_edge
+        # Return the closer endpoint as the snap node
+        u_data = self._graph.nodes.get(u, {})
+        v_data = self._graph.nodes.get(v, {})
+        dist_u = _haversine_m(lat, lng, float(u_data.get("y", 0)), float(u_data.get("x", 0)))
+        dist_v = _haversine_m(lat, lng, float(v_data.get("y", 0)), float(v_data.get("x", 0)))
+        snap_node = u if dist_u <= dist_v else v
+
+        return {
+            "source": u,
+            "target": v,
+            "snap_node": snap_node,
+            "distance_m": best_dist,
+            "fraction": best_fraction,
+        }
 
     def get_subgraph_for_mode(self, mode: str):
         if not self._graph:

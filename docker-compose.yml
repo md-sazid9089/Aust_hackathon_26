@@ -1,26 +1,21 @@
 # ============================================================
-# GoliTransit — Docker Compose
+# GoliTransit -- Docker Compose (Audited)
 # ============================================================
-# Orchestrates all three services: backend, ml, frontend
+# Orchestrates all services: backend, ml, frontend, redis
 #
 # Usage:
-#   docker compose up              — Start all services (dev mode)
-#   docker compose up --build      — Rebuild images and start
-#   docker compose up -d           — Start detached
-#   docker compose logs -f backend — Follow backend logs
-#   docker compose down            — Stop and remove containers
-#
-# Production build (frontend via Nginx):
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+#   docker compose up              -- Start all services (dev mode)
+#   docker compose up --build      -- Rebuild images and start
+#   docker compose up -d           -- Start detached
+#   docker compose logs -f backend -- Follow backend logs
+#   docker compose down            -- Stop and remove containers
 # ============================================================
 
-# ─── Shared Network ─────────────────────────────────────────
 networks:
   golitransit-net:
     driver: bridge
     name: golitransit-net
 
-# ─── Named Volumes ──────────────────────────────────────────
 volumes:
   ml-models:
     driver: local
@@ -30,9 +25,11 @@ volumes:
     driver: local
   mysql-db:
     driver: local
+  redis-data:
+    driver: local
 
 services:
-  # ─── MySQL Database ────────────────────────────────────────
+  # --- MySQL Database ---
   mysql:
     image: mysql:8.0
     container_name: golitransit-mysql
@@ -54,7 +51,26 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-  # ─── FastAPI Backend ────────────────────────────────────────
+
+  # --- Redis (in-memory cache for routing results) ---
+  redis:
+    image: redis:7-alpine
+    container_name: golitransit-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - golitransit-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  # --- FastAPI Backend ---
   backend:
     build:
       context: ./backend
@@ -66,16 +82,19 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./config.json:/app/config.json:ro     # Shared config (read-only)
-      - ./backend:/app                         # Live reload in dev
-      - osm-cache:/app/data/osm_cache          # Persist OSM cache
+      - ./config.json:/app/config.json:ro
+      - ./backend:/app
+      - osm-cache:/app/data/osm_cache
     environment:
       - CONFIG_PATH=/app/config.json
       - ML_PREDICTION_URL=http://ml:8001/predict
+      - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=${DATABASE_URL:-mysql+pymysql://${DB_USER:-golitransit}:${DB_PASSWORD:-golitransit_pass}@${DOCKER_DB_HOST:-mysql}:${DB_PORT:-3306}/${DB_NAME:-golitransit}}
       - PYTHONUNBUFFERED=1
     depends_on:
       ml:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - golitransit-net
@@ -83,11 +102,11 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 5s
-      start_period: 15s
+      start_period: 120s
       retries: 3
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  # ─── ML Prediction Service ─────────────────────────────────
+  # --- ML Prediction Service ---
   ml:
     build:
       context: ./ml
@@ -97,10 +116,10 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      - ./config.json:/app/config.json:ro     # Shared config (read-only)
-      - ./ml:/app                              # Live reload in dev
-      - ml-models:/app/models                  # Persist trained models
-      - ml-data:/app/data                      # Persist training data
+      - ./config.json:/app/config.json:ro
+      - ./ml:/app
+      - ml-models:/app/models
+      - ml-data:/app/data
     environment:
       - CONFIG_PATH=/app/config.json
       - PYTHONUNBUFFERED=1
@@ -114,7 +133,7 @@ services:
       retries: 3
     command: python predict.py
 
-  # ─── React Frontend (Vite dev server) ───────────────────────
+  # --- React Frontend (Vite dev server) ---
   frontend:
     build:
       context: ./frontend
@@ -125,8 +144,8 @@ services:
     ports:
       - "5174:5173"
     volumes:
-      - ./frontend:/app                        # Live reload in dev
-      - /app/node_modules                      # Prevent host node_modules override
+      - ./frontend:/app
+      - /app/node_modules
     environment:
       - VITE_API_BASE_URL=http://backend:8000
     depends_on:
@@ -135,7 +154,3 @@ services:
     networks:
       - golitransit-net
     command: npm run dev -- --host 0.0.0.0
-
-
-
-

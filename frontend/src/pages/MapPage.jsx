@@ -19,17 +19,15 @@ const HUD = {
 };
 
 function MapPage({ apiStatus }) {
-  // Route state
-  const [origin, setOrigin]           = useState(null);   // { lat, lng }
-  const [destination, setDestination] = useState(null);   // { lat, lng }
-  const [modes, setModes]             = useState(['car']); // selected transport modes
-  const [routeResult, setRouteResult] = useState(null);   // API response
-  const [isLoading, setIsLoading]     = useState(false);
-  const [error, setError]             = useState(null);
-  const [graphNodes, setGraphNodes]   = useState([]);
-
-  // Anomaly state
-  const [anomalies, setAnomalies] = useState([]);
+  const [origin, setOrigin] = useState(null);
+  const [destination, setDestination] = useState(null);
+  const [modes, setModes] = useState(['car']);
+  const [routeResult, setRouteResult] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [graphNodes, setGraphNodes] = useState([]);
+  const [anomalies] = useState([]);
+  const [panelScale, setPanelScale] = useState(getPanelScale(window.innerHeight));
 
   useEffect(() => {
     let isMounted = true;
@@ -46,10 +44,17 @@ function MapPage({ apiStatus }) {
     };
 
     loadGraphNodes();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // ─── Handle map clicks to set origin/destination ──────────
+  useEffect(() => {
+    const handleResize = () => setPanelScale(getPanelScale(window.innerHeight));
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleMapClick = (latlng) => {
     if (!origin) {
       setOrigin(latlng);
@@ -142,24 +147,29 @@ function MapPage({ apiStatus }) {
       <div
         style={{
           position: 'absolute',
-          top: 76,
-          left: 20,
-          bottom: 20,
-          zIndex: 20,
-          width: 292,
+          top: 6,
+          left: 12,
+            top: 2,
+            left: 10,
+            bottom: 8,
           display: 'flex',
           flexDirection: 'column',
-          gap: 12,
-          overflowY: 'auto',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
+          gap: 8,
+          overflow: 'hidden',
         }}
       >
         <div
           style={{
             background: '#161618',
-            borderRadius: 24,
-            padding: '20px',
+            borderRadius: 20,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              transform: `scale(${panelScale})`,
+              transformOrigin: 'top left',
+              width: `${100 / panelScale}%`,
+            }}
+            padding: '14px',
             boxShadow: '0 32px 80px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.05)',
             border: '1px solid rgba(255,255,255,0.07)',
             flexShrink: 0,
@@ -170,8 +180,8 @@ function MapPage({ apiStatus }) {
               display: 'flex',
               alignItems: 'center',
               gap: 9,
-              marginBottom: 18,
-              paddingBottom: 14,
+              marginBottom: 14,
+              paddingBottom: 12,
               borderBottom: '1px solid rgba(255,255,255,0.06)',
             }}
           >
@@ -214,13 +224,11 @@ function MapPage({ apiStatus }) {
         <div
           style={{
             background: '#161618',
-            borderRadius: 24,
-            padding: '20px',
+            borderRadius: 20,
+            padding: '14px',
             boxShadow: '0 32px 80px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.05)',
             border: '1px solid rgba(255,255,255,0.07)',
-            flex: 1,
-            overflowY: 'auto',
-            scrollbarWidth: 'none',
+            flexShrink: 0,
           }}
         >
           <RoutePanel
@@ -238,8 +246,8 @@ function MapPage({ apiStatus }) {
           <div
             style={{
               background: '#161618',
-              borderRadius: 24,
-              padding: '20px',
+              borderRadius: 20,
+              padding: '14px',
               boxShadow: '0 32px 80px rgba(0,0,0,0.75)',
               border: '1px solid rgba(249,115,22,0.22)',
               flexShrink: 0,
@@ -255,7 +263,7 @@ function MapPage({ apiStatus }) {
           className="animate-fade-in"
           style={{
             position: 'absolute',
-            top: 80,
+            top: 8,
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 30,
@@ -281,7 +289,7 @@ function MapPage({ apiStatus }) {
           className="animate-fade-in"
           style={{
             position: 'absolute',
-            top: 80,
+            top: 8,
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 30,

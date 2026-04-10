@@ -26,7 +26,7 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
   const hasPoints = origin && destination;
 
   return (
-    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
       {/* ── Section header ── */}
       <div style={{
@@ -84,7 +84,7 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
       </div>
 
       {/* ── Action buttons ── */}
-      <div style={{ display: 'flex', gap: 8, paddingTop: 2 }}>
+      <div style={{ display: 'flex', gap: 8, paddingTop: 0 }}>
         <button
           id="btn-compute-route"
           onClick={onCompute}
@@ -198,7 +198,7 @@ function RoutePanel({ origin, destination, routeResult, isLoading, error, onComp
             overflow: 'hidden',
           }}>
             <div style={{
-              padding: '10px 14px 6px',
+              padding: '8px 12px 4px',
               fontSize: 9,
               fontWeight: 800,
               textTransform: 'uppercase',
@@ -388,15 +388,15 @@ function WaypointDisplay({ label, latlng, accentColor, emptyText }) {
 function MetricCell({ value, label, accent, borderRight }) {
   return (
     <div style={{
-      padding: '10px 12px 12px',
+      padding: '8px 10px 10px',
       textAlign: 'center',
       borderRight: borderRight ? '1px solid rgba(255,255,255,0.04)' : 'none',
     }}>
       <div style={{
         fontFamily: 'JetBrains Mono, monospace',
-        fontSize: 17, fontWeight: 800,
+        fontSize: 16, fontWeight: 800,
         color: accent || '#fff',
-        marginBottom: 3,
+        marginBottom: 2,
         letterSpacing: '-0.02em',
       }}>
         {value}
@@ -422,7 +422,7 @@ function LegCard({ leg, index }) {
       background: '#111113',
       border: '1px solid rgba(255,255,255,0.05)',
       borderRadius: 12,
-      padding: '10px 14px 10px 18px',
+      padding: '8px 12px 8px 16px',
       position: 'relative',
       overflow: 'hidden',
     }}>
@@ -438,14 +438,14 @@ function LegCard({ leg, index }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 5,
+        marginBottom: 4,
       }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ fontSize: 16 }}>{getModeEmoji(leg.mode)}</span>
+          <span style={{ fontSize: 15 }}>{getModeEmoji(leg.mode)}</span>
           <span style={{
             textTransform: 'capitalize',
             color: accent,
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: 800,
             fontFamily: 'Inter, sans-serif',
           }}>
@@ -471,7 +471,7 @@ function LegCard({ leg, index }) {
       <div style={{
         display: 'flex',
         gap: 10,
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: 600,
         color: '#737373',
         fontFamily: 'JetBrains Mono, monospace',
