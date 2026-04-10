@@ -14,6 +14,22 @@ import { useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMapEvents, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
+const SEGMENT_MODE_COLORS = {
+  car: '#ef4444',      // red
+  bike: '#22c55e',     // green
+  rickshaw: '#facc15', // yellow
+  walk: '#f97316',     // orange
+  transit: '#3b82f6',  // blue (bus/transit)
+};
+
+const SINGLE_MODE_COLORS = {
+  car: '#ef4444',
+  bike: '#22c55e',
+  rickshaw: '#facc15',
+  walk: '#f97316',
+  transit: '#3b82f6',
+};
+
 const originIcon = new L.DivIcon({
   className: '',
   html: `<div style="
@@ -129,13 +145,38 @@ function MapFABControls({ defaultCenter, defaultZoom }) {
 
 // ─── Main MapView Component ───────────────────────────────────────
 
-function MapView({ origin, destination, routeResult, graphNodes, onMapClick, onOriginDrag, onDestinationDrag }) {
+function MapView({ origin, destination, routeResult, selectedMode, graphNodes, onMapClick, onOriginDrag, onDestinationDrag }) {
   // Default center: Ahsanullah University of Science and Technology area
   const defaultCenter = [23.7639, 90.4066];
   const defaultZoom = 14;
 
   const routeCoords =
     routeResult?.legs?.flatMap((leg) => leg.geometry?.map((point) => [point.lat, point.lng]) || []) || [];
+
+  const singleModeLineColor = SINGLE_MODE_COLORS[selectedMode] || '#22c55e';
+
+  const coloredSegments = useMemo(() => {
+    const suggestions = routeResult?.multimodal_suggestions || [];
+    if (!Array.isArray(suggestions) || suggestions.length === 0) {
+      return [];
+    }
+
+    const fastest = suggestions.find((s) => s.strategy === 'fastest_time');
+    const shortest = suggestions.find((s) => s.strategy === 'shortest_distance');
+    const chosen = fastest || shortest;
+    if (!chosen || !Array.isArray(chosen.segments)) {
+      return [];
+    }
+
+    return chosen.segments
+      .filter((seg) => Array.isArray(seg.geometry) && seg.geometry.length >= 2)
+      .map((seg, idx) => ({
+        key: `seg-${idx}`,
+        mode: seg.recommended_vehicle,
+        color: SEGMENT_MODE_COLORS[seg.recommended_vehicle] || '#22c55e',
+        positions: seg.geometry.map((p) => [p.lat, p.lng]),
+      }));
+  }, [routeResult]);
 
   const originDragHandlers = useMemo(
     () => ({
@@ -210,18 +251,32 @@ function MapView({ origin, destination, routeResult, graphNodes, onMapClick, onO
         </Marker>
       )}
 
-      {routeCoords.length >= 2 && (
+      {coloredSegments.length > 0 ? (
+        coloredSegments.map((seg) => (
+          <Polyline
+            key={seg.key}
+            positions={seg.positions}
+            pathOptions={{
+              color: seg.color,
+              weight: 6,
+              opacity: 0.95,
+              lineCap: 'round',
+              lineJoin: 'round',
+            }}
+          />
+        ))
+      ) : routeCoords.length >= 2 ? (
         <Polyline
           positions={routeCoords}
           pathOptions={{
-            color: '#22c55e',
+            color: singleModeLineColor,
             weight: 5,
             opacity: 0.85,
             lineCap: 'round',
             lineJoin: 'round',
           }}
         />
-      )}
+      ) : null}
 
       {/* ─── Graph node dots (all road junction nodes) ───── */}
       {nodeCoords.map((position, idx) => (
