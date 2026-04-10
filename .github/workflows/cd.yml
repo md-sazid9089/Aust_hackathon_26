@@ -93,7 +93,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: cd frontend && vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build frontend for Vercel
         env:
@@ -107,7 +107,7 @@ jobs:
       - name: Deploy to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: cd frontend && vercel deploy --prod --token="$VERCEL_TOKEN"
+        run: vercel deploy --prod --token="$VERCEL_TOKEN"
 
   deploy-frontend-preview:
     name: Deploy frontend preview to Vercel
@@ -133,7 +133,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: cd frontend && vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
 
       - name: Build frontend preview
         env:
@@ -149,7 +149,6 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          cd frontend
           PREVIEW_URL=$(vercel deploy --token="$VERCEL_TOKEN")
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
 
