@@ -13,10 +13,11 @@
 import { useState, useEffect } from 'react';
 import HomePage from './pages/HomePage';
 import MapPage from './pages/MapPage';
+import LoginPage from './pages/LoginPage';
 import { checkHealth } from './services/api';
 
 function App() {
-  const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'map'
+  const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'map' | 'login'
   const [apiStatus, setApiStatus] = useState(null);       // health check result
 
   // Check backend health on mount
@@ -127,6 +128,35 @@ function App() {
             Route Map
           </button>
 
+          {/* Login Button */}
+          <button
+            id="nav-login"
+            onClick={() => setCurrentPage('login')}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 999, fontSize: 13, fontWeight: 500,
+              border: '1px solid rgba(168,85,247,0.30)',
+              cursor: 'pointer',
+              background: currentPage === 'login' ? 'rgba(168,85,247,0.15)' : 'transparent',
+              color: currentPage === 'login' ? '#c4b5fd' : '#a78bfa',
+              transition: 'all 0.18s ease',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'rgba(168,85,247,0.15)';
+              e.currentTarget.style.borderColor = 'rgba(168,85,247,0.50)';
+              e.currentTarget.style.color = '#c4b5fd';
+            }}
+            onMouseLeave={e => {
+              if (currentPage !== 'login') {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = 'rgba(168,85,247,0.30)';
+                e.currentTarget.style.color = '#a78bfa';
+              }
+            }}
+          >
+            Sign In
+          </button>
+
           {/* Launch CTA — green */}
           <button
             onClick={() => setCurrentPage('map')}
@@ -186,17 +216,19 @@ function App() {
       ══════════════════════════════════════════════════ */}
       <main style={{
         flex: 1, position: 'relative',
-        paddingTop: isMapPage ? 0 : 76,   /* space for floating navbar on home */
+        paddingTop: isMapPage ? 0 : currentPage === 'login' ? 0 : 76,   /* no padding for map and login pages */
       }}>
         {currentPage === 'home' ? (
           <HomePage onNavigateToMap={() => setCurrentPage('map')} apiStatus={apiStatus} />
+        ) : currentPage === 'login' ? (
+          <LoginPage onNavigateToHome={() => setCurrentPage('home')} />
         ) : (
           <MapPage apiStatus={apiStatus} />
         )}
       </main>
 
-      {/* Footer — hidden on map page (map covers it with position:fixed) */}
-      {!isMapPage && (
+      {/* Footer — hidden on map and login pages */}
+      {!isMapPage && currentPage !== 'login' && (
         <footer className="app-footer">
           <span>GoliTransit AI — Multi-Modal Hyper-Local Routing Engine</span>
           <span style={{ color: 'rgba(255,255,255,0.12)' }}>v0.1.0-hackathon</span>
