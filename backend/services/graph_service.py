@@ -311,6 +311,44 @@ class GraphService:
 
         return best_node
 
+    def get_nearest_node_in_graph(self, graph: nx.MultiDiGraph, lat: float, lng: float):
+        """Find nearest node inside the provided graph."""
+        if graph is None or graph.number_of_nodes() == 0:
+            return None
+
+        best_node = None
+        best_dist_m = float("inf")
+
+        for node_id, node_data in graph.nodes(data=True):
+            y = node_data.get("y")
+            x = node_data.get("x")
+            if y is None or x is None:
+                continue
+
+            dist_m = _haversine_m(lat, lng, float(y), float(x))
+            if dist_m < best_dist_m:
+                best_dist_m = dist_m
+                best_node = node_id
+
+        return best_node
+
+    def get_k_nearest_nodes_in_graph(self, graph: nx.MultiDiGraph, lat: float, lng: float, k: int = 8):
+        """Return k nearest nodes inside the provided graph, sorted by distance."""
+        if graph is None or graph.number_of_nodes() == 0:
+            return []
+
+        ranked = []
+        for node_id, node_data in graph.nodes(data=True):
+            y = node_data.get("y")
+            x = node_data.get("x")
+            if y is None or x is None:
+                continue
+            dist_m = _haversine_m(lat, lng, float(y), float(x))
+            ranked.append((dist_m, node_id))
+
+        ranked.sort(key=lambda t: t[0])
+        return [node_id for _, node_id in ranked[: max(1, int(k))]]
+
     def get_nearest_node_with_distance(self, lat: float, lng: float):
         """
         Find the nearest graph node and return both the node ID and distance.
