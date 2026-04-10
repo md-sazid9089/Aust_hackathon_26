@@ -4,7 +4,7 @@
 
   "graph": {
     "osm_source": "osmnx",
-    "default_location": "San Francisco, California, USA",
+    "default_location": "Dhaka, Bangladesh",
     "network_type": "all",
     "simplify": true,
     "cache_dir": "./data/osm_cache"
