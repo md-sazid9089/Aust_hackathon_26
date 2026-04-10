@@ -10,4 +10,6 @@ Modules:
   - route.py   → POST /route
   - anomaly.py → POST /anomaly, GET /anomaly
   - graph.py   → GET /graph/snapshot
+  - v2.py      → POST /v2/route, POST /v2/route/coords,
+                  POST /v2/anomaly, GET /v2/graph/snapshot
 """

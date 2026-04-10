@@ -133,22 +133,36 @@ class AnomalyService:
     def _resolve_edges(self, report: AnomalyReport) -> list[str]:
         """
         Resolve the anomaly location to a list of affected graph edge IDs.
-
-        TODO: Implement:
-          - If report.location.edge_id is set, use it directly
-          - If lat/lng is set, find nearest edge(s) using graph_service
-          - For wildcard edge_id "*", affect all edges (weather scenario)
+        Supports: direct edge_id, wildcard "*", or lat/lng nearest-node lookup.
         """
         if report.location.edge_id:
             if report.location.edge_id == "*":
                 # Wildcard: affects all edges (e.g., weather)
-                # TODO: return list of all edge IDs from graph_service
+                graph = graph_service.get_graph()
+                if graph:
+                    return [
+                        f"{u}->{v}"
+                        for u, v, _ in graph.edges(keys=True)
+                    ]
                 return ["*"]
             return [report.location.edge_id]
 
-        # TODO: Use graph_service to find nearest edge by lat/lng
-        # nearest_node = graph_service.get_nearest_node(report.location.lat, report.location.lng)
-        # Find edges connected to nearest_node
+        # Use graph_service to find nearest node and its connected edges
+        if report.location.lat is not None and report.location.lng is not None:
+            nearest_node = graph_service.get_nearest_node(
+                report.location.lat, report.location.lng
+            )
+            if nearest_node:
+                graph = graph_service.get_graph()
+                if graph:
+                    edges = []
+                    # Outgoing edges
+                    for _, v, _ in graph.out_edges(nearest_node, keys=True):
+                        edges.append(f"{nearest_node}->{v}")
+                    # Incoming edges
+                    for u, _, _ in graph.in_edges(nearest_node, keys=True):
+                        edges.append(f"{u}->{nearest_node}")
+                    return edges
         return []
 
     # ─── Weight Application ──────────────────────────────────────
@@ -156,22 +170,42 @@ class AnomalyService:
     def _apply_weight_multiplier(self, edge_id: str, multiplier: float):
         """
         Apply the severity-based weight multiplier to an edge.
-
-        TODO: Parse edge_id into source/target and call:
-          graph_service.update_edge_weight(source, target, multiplier)
+        Parses edge_id in 'source->target' format and calls graph_service.
         """
-        # STUB: In production, parse edge_id and update graph
-        print(f"[AnomalyService] Applying {multiplier}x multiplier to edge {edge_id}")
+        parts = edge_id.split("->")
+        if len(parts) == 2:
+            source, target = parts[0].strip(), parts[1].strip()
+            graph_service.update_edge_weight(source, target, multiplier)
+            # Also update the per-mode weights dict
+            graph = graph_service.get_graph()
+            if graph and graph.has_edge(source, target):
+                for key in graph[source][target]:
+                    edge_data = graph[source][target][key]
+                    if "weights" in edge_data:
+                        for mode in edge_data["weights"]:
+                            base_time = float(edge_data.get(f"{mode}_travel_time", 0))
+                            edge_data["weights"][mode] = base_time * multiplier
+        print(f"[AnomalyService] Applied {multiplier}x multiplier to edge {edge_id}")
 
     def _reset_edge_weight(self, edge_id: str):
         """
         Reset an edge's weight after anomaly expiry.
-
-        TODO: Parse edge_id into source/target and call:
-          graph_service.reset_edge_weight(source, target)
+        Parses edge_id in 'source->target' format and calls graph_service.
         """
-        # STUB: In production, parse edge_id and reset graph
-        print(f"[AnomalyService] Resetting edge weight for {edge_id}")
+        parts = edge_id.split("->")
+        if len(parts) == 2:
+            source, target = parts[0].strip(), parts[1].strip()
+            graph_service.reset_edge_weight(source, target)
+            # Also restore per-mode weights
+            graph = graph_service.get_graph()
+            if graph and graph.has_edge(source, target):
+                for key in graph[source][target]:
+                    edge_data = graph[source][target][key]
+                    if "weights" in edge_data:
+                        for mode in edge_data["weights"]:
+                            base_time = float(edge_data.get(f"{mode}_travel_time", 0))
+                            edge_data["weights"][mode] = base_time
+        print(f"[AnomalyService] Reset edge weight for {edge_id}")
 
     # ─── Expiry ──────────────────────────────────────────────────
 

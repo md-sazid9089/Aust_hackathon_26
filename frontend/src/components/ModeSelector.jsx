@@ -1,47 +1,71 @@
 /*
  * ModeSelector — Transport Mode Picker Component
  * ==================================================
- * Allows users to build a sequence of transport modes for their route.
- *
- * Single-modal: Click one mode (e.g., "Car" → modes = ["car"])
- * Multi-modal: Click multiple modes in order (e.g., Walk → Transit → Walk)
- *
- * Integration:
- *   - Receives selectedModes from MapPage state
- *   - Calls onChange callback with updated mode sequence
- *   - Mode identifiers match config.json vehicle_types keys
+ * HUD-style mode picker matching the design spec.
+ * Grid of transport modes with glow effects on selection.
+ * Sequence bar shows the current multi-modal route chain.
  */
 
 const AVAILABLE_MODES = [
-  { id: 'car',     label: 'Car',     icon: '🚗' },
-  { id: 'bike',    label: 'Bike',    icon: '🚲' },
-  { id: 'walk',    label: 'Walk',    icon: '🚶' },
-  { id: 'transit', label: 'Transit', icon: '🚌' },
-  { id: 'rickshaw',label: 'Rickshaw',icon: '🛺' },
+  { id: 'car',      label: 'Car',      icon: '\u{1F697}' },
+  { id: 'bike',     label: 'Bike',     icon: '\u{1F6B2}' },
+  { id: 'walk',     label: 'Walk',     icon: '\u{1F6B6}' },
+  { id: 'transit',  label: 'Transit',  icon: '\u{1F68C}' },
+  { id: 'rickshaw', label: 'Rickshaw', icon: '\u{1F6FA}' },
 ];
 
 function ModeSelector({ selectedModes, onChange }) {
-  // ─── Toggle mode: add/remove from sequence ────────────────
-  const toggleMode = (modeId) => {
-    const lastMode = selectedModes[selectedModes.length - 1];
-    if (selectedModes.length === 1 && selectedModes[0] === modeId) return;
-    if (lastMode === modeId) {
-      onChange(selectedModes.slice(0, -1));
-    } else {
-      onChange([...selectedModes, modeId]);
-    }
-  };
-
-  // ─── Quick single-mode selection ──────────────────────────
   const selectSingle = (modeId) => onChange([modeId]);
+  const appendMode = (modeId) => onChange([...selectedModes, modeId]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-      {/* ── Mode grid ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+      {/* Section header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        paddingBottom: 12,
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        <div style={{
+          width: 34, height: 34,
+          borderRadius: 11,
+          background: 'linear-gradient(135deg, rgba(139,92,246,0.20), rgba(139,92,246,0.06))',
+          border: '1px solid rgba(139,92,246,0.25)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 16,
+        }}>
+          {'\u{1F6A6}'}
+        </div>
+        <div>
+          <div style={{
+            fontSize: 15, fontWeight: 800, color: '#fff',
+            letterSpacing: '-0.01em',
+            fontFamily: 'Inter, system-ui, sans-serif',
+          }}>
+            Transport Mode
+          </div>
+          <div style={{
+            fontSize: 9, color: '#525252',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.12em',
+            marginTop: 1,
+          }}>
+            Select your mode
+          </div>
+        </div>
+      </div>
+
+      {/* Mode grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 7 }}>
         {AVAILABLE_MODES.map((mode) => {
-          const isActive = selectedModes.length === 1 && selectedModes[0] === mode.id;
+          const isActive = selectedModes.includes(mode.id);
+          const isPrimary = selectedModes.length === 1 && selectedModes[0] === mode.id;
+
           return (
             <button
               key={mode.id}
@@ -52,26 +76,30 @@ function ModeSelector({ selectedModes, onChange }) {
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 7,
-                padding: '14px 6px',
+                gap: 6,
+                padding: '12px 6px',
                 borderRadius: 16,
-                fontSize: 12,
-                fontWeight: 800,
+                fontSize: 11,
+                fontWeight: 700,
                 fontFamily: 'Inter, system-ui, sans-serif',
                 letterSpacing: '0.01em',
                 cursor: 'pointer',
-                border: isActive
-                  ? '1.5px solid rgba(139,92,246,0.60)'
-                  : '1.5px solid rgba(255,255,255,0.06)',
-                transition: 'all 0.18s ease',
-                background: isActive
-                  ? 'linear-gradient(145deg, #7c3aed, #8b5cf6)'
-                  : '#1e1e20',
-                color: isActive ? '#ffffff' : '#737373',
-                boxShadow: isActive
-                  ? '0 6px 20px rgba(139,92,246,0.45), inset 0 1px 0 rgba(255,255,255,0.12)'
-                  : '0 2px 8px rgba(0,0,0,0.35)',
-                transform: isActive ? 'translateY(-2px)' : 'translateY(0)',
+                border: isPrimary
+                  ? '1.5px solid rgba(139,92,246,0.55)'
+                  : isActive
+                    ? '1.5px solid rgba(139,92,246,0.30)'
+                    : '1.5px solid rgba(255,255,255,0.06)',
+                transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)',
+                background: isPrimary
+                  ? 'linear-gradient(145deg, rgba(124,58,237,0.90), rgba(139,92,246,0.80))'
+                  : isActive
+                    ? 'rgba(139,92,246,0.12)'
+                    : 'rgba(255,255,255,0.03)',
+                color: isPrimary ? '#fff' : isActive ? '#c4b5fd' : '#737373',
+                boxShadow: isPrimary
+                  ? '0 8px 24px rgba(139,92,246,0.40), inset 0 1px 0 rgba(255,255,255,0.10)'
+                  : 'none',
+                transform: isPrimary ? 'translateY(-1px)' : 'none',
               }}
             >
               <span style={{ fontSize: 22, lineHeight: 1 }}>{mode.icon}</span>
@@ -81,54 +109,53 @@ function ModeSelector({ selectedModes, onChange }) {
         })}
       </div>
 
-      {/* ── Sequence row ── */}
+      {/* Sequence bar */}
       <div style={{
-        background: '#111113',
-        border: '1px solid rgba(255,255,255,0.06)',
+        background: 'rgba(0,0,0,0.30)',
+        border: '1px solid rgba(255,255,255,0.05)',
         borderRadius: 14,
-        padding: '10px 12px',
+        padding: '9px 12px',
       }}>
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: 8,
+          marginBottom: 7,
         }}>
           <span style={{
-            fontSize: 9,
-            fontWeight: 800,
+            fontSize: 9, fontWeight: 800,
             textTransform: 'uppercase',
             letterSpacing: '0.14em',
-            color: '#525252',
+            color: '#404040',
             fontFamily: 'JetBrains Mono, monospace',
           }}>
             Sequence
           </span>
-          
-          {/* Quick Add Toolbar */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 9, color: '#404040', fontFamily: 'Inter, sans-serif', fontWeight: 600, marginRight: 2 }}>ADD:</span>
+
+          {/* Quick add icons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
             {AVAILABLE_MODES.map((m) => (
               <button
                 key={`add-${m.id}`}
-                onClick={() => onChange([...selectedModes, m.id])}
+                onClick={() => appendMode(m.id)}
+                title={`Append ${m.label}`}
                 style={{
-                  background: '#161618',
-                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.06)',
                   borderRadius: 6,
                   padding: '2px 5px',
                   cursor: 'pointer',
                   fontSize: 12,
+                  lineHeight: 1,
                   transition: 'all 0.15s ease',
                 }}
-                title={`Append ${m.label}`}
                 onMouseEnter={e => {
                   e.currentTarget.style.background = 'rgba(139,92,246,0.15)';
-                  e.currentTarget.style.borderColor = 'rgba(139,92,246,0.50)';
+                  e.currentTarget.style.borderColor = 'rgba(139,92,246,0.40)';
                 }}
                 onMouseLeave={e => {
-                  e.currentTarget.style.background = '#161618';
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
                 }}
               >
                 {m.icon}
@@ -138,19 +165,19 @@ function ModeSelector({ selectedModes, onChange }) {
         </div>
 
         {/* Sequence pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', minHeight: 26 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', minHeight: 24 }}>
           {selectedModes.map((modeId, idx) => {
             const mode = AVAILABLE_MODES.find((m) => m.id === modeId);
             return (
-              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 {idx > 0 && (
                   <span style={{
-                    color: '#525252',
+                    color: '#333',
                     fontSize: 10,
                     fontFamily: 'JetBrains Mono, monospace',
                     fontWeight: 700,
                   }}>
-                    →
+                    {'\u2192'}
                   </span>
                 )}
                 <span
@@ -162,26 +189,26 @@ function ModeSelector({ selectedModes, onChange }) {
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: 4,
+                    gap: 5,
                     padding: '4px 10px',
-                    background: 'rgba(139,92,246,0.18)',
-                    border: '1px solid rgba(139,92,246,0.40)',
+                    background: 'rgba(139,92,246,0.15)',
+                    border: '1px solid rgba(139,92,246,0.35)',
                     borderRadius: 999,
                     fontSize: 11,
                     fontWeight: 700,
                     color: '#a78bfa',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: 'Inter, system-ui, sans-serif',
                   }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.background = 'rgba(239,68,68,0.15)';
-                    e.currentTarget.style.borderColor = 'rgba(239,68,68,0.45)';
+                    e.currentTarget.style.background = 'rgba(239,68,68,0.12)';
+                    e.currentTarget.style.borderColor = 'rgba(239,68,68,0.40)';
                     e.currentTarget.style.color = '#f87171';
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.background = 'rgba(139,92,246,0.18)';
-                    e.currentTarget.style.borderColor = 'rgba(139,92,246,0.40)';
+                    e.currentTarget.style.background = 'rgba(139,92,246,0.15)';
+                    e.currentTarget.style.borderColor = 'rgba(139,92,246,0.35)';
                     e.currentTarget.style.color = '#a78bfa';
                   }}
                 >
@@ -191,45 +218,6 @@ function ModeSelector({ selectedModes, onChange }) {
             );
           })}
         </div>
-      </div>
-
-      {/* ── Preset chips ── */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {[
-          { id: 'preset-walk-transit-walk', label: '🚶→🚌→🚶', fn: () => onChange(['walk', 'transit', 'walk']) },
-          { id: 'preset-transit-rickshaw',  label: '🚌→🛺',    fn: () => onChange(['transit', 'rickshaw']) },
-          { id: 'preset-car-walk',          label: '🚗→🚶',    fn: () => onChange(['car', 'walk']) },
-        ].map((p) => (
-          <button
-            key={p.id}
-            id={p.id}
-            onClick={p.fn}
-            style={{
-              fontSize: 11,
-              padding: '5px 12px',
-              background: '#1e1e20',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: 999,
-              color: '#737373',
-              cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif',
-              fontWeight: 600,
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'rgba(139,92,246,0.15)';
-              e.currentTarget.style.borderColor = 'rgba(139,92,246,0.50)';
-              e.currentTarget.style.color = '#a78bfa';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = '#1e1e20';
-              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
-              e.currentTarget.style.color = '#737373';
-            }}
-          >
-            {p.label}
-          </button>
-        ))}
       </div>
     </div>
   );
