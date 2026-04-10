@@ -39,6 +39,7 @@ export async function computeRoute({
   avoid_anomalies = true,
   max_alternatives = null,
   include_multimodal = false,
+  traffic_hour_of_day = new Date().getHours(),
 }) {
   const payload = {
     origin: { lat: origin.lat, lng: origin.lng },
@@ -47,6 +48,7 @@ export async function computeRoute({
     optimize,
     avoid_anomalies,
     include_multimodal,
+    traffic_hour_of_day,
   };
 
   if (max_alternatives !== null) {
