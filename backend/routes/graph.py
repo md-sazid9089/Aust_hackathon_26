@@ -22,6 +22,7 @@ router = APIRouter()
 async def get_graph_snapshot(
     include_edges: bool = Query(False, description="Include full edge list (can be large)"),
     bbox: str = Query(None, description="Bounding box filter: 'south,west,north,east'"),
+    mode: str = Query(None, description="Filter nodes by transport mode accessibility (car, bike, walk, transit, rickshaw)"),
 ):
     """
     Return a snapshot of the current road graph.
@@ -29,10 +30,11 @@ async def get_graph_snapshot(
     Query params:
       - include_edges: if true, return the full edge list (warning: large payload)
       - bbox: optional geographic bounding box to filter nodes/edges
+      - mode: optional transport mode to filter nodes that are accessible by this mode
 
     Returns:
       - node_count, edge_count
-      - nodes: list of { id, lat, lng } (always included)
+      - nodes: list of { id, lat, lng, accessible_modes } (always included)
       - edges: list of { source, target, weight, road_type } (if include_edges=true)
       - anomaly_affected_edges: edges with modified weights due to active anomalies
     """
@@ -46,5 +48,9 @@ async def get_graph_snapshot(
         except ValueError:
             pass  # ignore malformed bbox, return full graph
 
-    snapshot = graph_service.get_snapshot(include_edges=include_edges, bbox=bbox_tuple)
+    snapshot = graph_service.get_snapshot(
+        include_edges=include_edges,
+        bbox=bbox_tuple,
+        mode_filter=mode
+    )
     return snapshot
