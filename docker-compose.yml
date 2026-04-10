@@ -30,6 +30,8 @@ volumes:
     driver: local
   osm-cache:
     driver: local
+  mysql-db:
+    driver: local
 
 services:
 
@@ -49,9 +51,12 @@ services:
     environment:
       - CONFIG_PATH=/app/config.json
       - ML_PREDICTION_URL=http://ml:8001/predict
+      - DATABASE_URL=mysql+pymysql://golitransit:golitransit_pass@mysql:3306/golitransit
       - PYTHONUNBUFFERED=1
     depends_on:
       ml:
+        condition: service_healthy
+      mysql:
         condition: service_healthy
     networks:
       - golitransit-net
@@ -89,6 +94,29 @@ services:
       start_period: 20s
       retries: 3
     command: python predict.py
+
+  # ─── MySQL Database ────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: golitransit-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-db:/var/lib/mysql                # Persist database data
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_pass
+      - MYSQL_DATABASE=golitransit
+      - MYSQL_USER=golitransit
+      - MYSQL_PASSWORD=golitransit_pass
+    networks:
+      - golitransit-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
 
   # ─── React Frontend (Vite dev server) ───────────────────────
   frontend:
