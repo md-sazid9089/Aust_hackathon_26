@@ -16,6 +16,17 @@ from config import settings
 from models.graph_models import GraphSnapshot, GraphNode, GraphEdge
 
 
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    r = 6371000.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return r * c
+
+
 def _first_highway_value(highway: object) -> str:
     if isinstance(highway, list) and highway:
         return str(highway[0])
@@ -67,41 +78,50 @@ class GraphService:
     def __init__(self):
         self._graph: Optional[nx.MultiDiGraph] = None
         self._loaded = False
+        self._center_lat = float(settings.graph_center_lat)
+        self._center_lng = float(settings.graph_center_lng)
+        self._radius_m = float(settings.graph_radius_m)
 
     def load_graph(self, location: Optional[str] = None):
         """Download/load OSM graph and normalize edge attributes for routing."""
         location = location or settings.osm_location
-        print(f"[GraphService] Loading graph for: {location}")
+        print(
+            f"[GraphService] Loading graph for: {location} "
+            f"(center={self._center_lat},{self._center_lng}, radius={self._radius_m}m)"
+        )
 
         graph: Optional[nx.MultiDiGraph] = None
 
         try:
-            if "dhaka" in location.lower():
-                # Keep the map focused around Dhaka/AUST area to match the frontend UX.
-                graph = ox.graph_from_point(
-                    center_point=(23.7639, 90.4066),
-                    dist=12000,
-                    network_type=settings.network_type,
-                    simplify=settings.simplify_graph,
-                )
-            else:
-                graph = ox.graph_from_place(
-                    location,
-                    network_type=settings.network_type,
-                    simplify=settings.simplify_graph,
-                )
+            # Always build a local neighborhood graph for hackathon scope:
+            # all roads (main roads + small gullies) within 2km around AUST.
+            graph = ox.graph_from_point(
+                center_point=(self._center_lat, self._center_lng),
+                dist=self._radius_m,
+                dist_type="bbox",
+                network_type=settings.network_type,
+                simplify=settings.simplify_graph,
+            )
+
+            # Enforce strict circular radius (not just bounding box).
+            nodes_outside = []
+            for node_id, node_data in graph.nodes(data=True):
+                y = float(node_data.get("y") or 0.0)
+                x = float(node_data.get("x") or 0.0)
+                if _haversine_m(self._center_lat, self._center_lng, y, x) > self._radius_m:
+                    nodes_outside.append(node_id)
+
+            if nodes_outside:
+                graph.remove_nodes_from(nodes_outside)
+
+            # Keep only the largest connected component to avoid tiny disconnected scraps.
+            if graph.number_of_nodes() > 0:
+                largest_cc = max(nx.weakly_connected_components(graph), key=len)
+                graph = graph.subgraph(largest_cc).copy()
         except Exception as e:
-            if "dhaka" not in location.lower():
-                # Fallback to Dhaka if configured place fails.
-                print(f"[GraphService] Failed to load '{location}', falling back to Dhaka: {e}")
-                graph = ox.graph_from_point(
-                    center_point=(23.7639, 90.4066),
-                    dist=12000,
-                    network_type=settings.network_type,
-                    simplify=settings.simplify_graph,
-                )
-            else:
-                raise RuntimeError(f"Failed to load OSM graph for '{location}': {e}") from e
+            raise RuntimeError(
+                f"Failed to load OSM graph around AUST center ({self._center_lat}, {self._center_lng})"
+            ) from e
 
         if graph is None:
             raise RuntimeError("Graph load failed: no graph returned")
