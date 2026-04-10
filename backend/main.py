@@ -18,9 +18,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from database import engine, Base
+from models import user_models, traffic_models  # noqa: F401
 from routes import health, auth, route, anomaly, graph
 from routes.v2 import router as v2_router
 from services.graph_service import graph_service
+from services.traffic_jam_service import traffic_jam_service
 
 
 # ─── Lifespan: load the road graph once at startup ───────────────
@@ -39,6 +41,10 @@ async def lifespan(app: FastAPI):
     print("[startup] Loading road graph...")
     graph_service.load_graph()
     print(f"[startup] Graph loaded — {graph_service.node_count()} nodes, {graph_service.edge_count()} edges")
+
+    print("[startup] Building dummy traffic dataset and training jam model...")
+    traffic_jam_service.initialize_from_graph(graph_service.get_graph())
+    print("[startup] Traffic jam model ready")
     yield
     print("[shutdown] Cleaning up resources...")
 
