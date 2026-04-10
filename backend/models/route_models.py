@@ -46,6 +46,10 @@ class RouteRequest(BaseModel):
         None,
         description="Number of alternative routes to return (overrides config default)",
     )
+    include_multimodal: bool = Field(
+        False,
+        description="When true, include multimodal segment suggestions in response",
+    )
 
 
 class RouteLeg(BaseModel):
@@ -73,6 +77,34 @@ class ModeSwitch(BaseModel):
     penalty_cost: float = 0.0
 
 
+class VehicleOption(BaseModel):
+    """Travel-time option for one vehicle on one segment."""
+
+    vehicle: str
+    travel_time_s: float = 0.0
+    allowed: bool = True
+
+
+class SegmentSuggestion(BaseModel):
+    """Segment-level multimodal recommendation."""
+
+    segment_index: int
+    distance_m: float = 0.0
+    road_type: str = "unknown"
+    recommended_vehicle: str
+    geometry: list[LatLng] = Field(default_factory=list)
+    vehicle_options: list[VehicleOption] = Field(default_factory=list)
+
+
+class MultimodalSuggestion(BaseModel):
+    """Route-wide recommendation strategy (distance-first or time-first)."""
+
+    strategy: str
+    total_distance_m: float = 0.0
+    total_duration_s: float = 0.0
+    segments: list[SegmentSuggestion] = Field(default_factory=list)
+
+
 class RouteResponse(BaseModel):
     """Full response for a route computation."""
     legs: list[RouteLeg]
@@ -86,4 +118,8 @@ class RouteResponse(BaseModel):
     alternatives: list[list[RouteLeg]] = Field(
         default_factory=list,
         description="Alternative route options",
+    )
+    multimodal_suggestions: list[MultimodalSuggestion] = Field(
+        default_factory=list,
+        description="Segment-wise vehicle suggestions for shortest-distance and fastest-time strategies",
     )
