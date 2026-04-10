@@ -3,15 +3,23 @@
  * ==================================================
  * HUD-style mode picker matching the design spec.
  * Grid of transport modes with glow effects on selection.
- * Sequence bar shows the current multi-modal route chain.
+ * Color-coded indicators for each transportation mode.
  */
 
+const MODE_COLORS = {
+  walk: '#ef4444',      // Red for Walking
+  bike: '#eab308',      // Yellow for Cycling
+  transit: '#3b82f6',   // Blue for Bus/Transit
+  rickshaw: '#22c55e',  // Green for Rickshaw
+  car: '#a855f7',       // Purple for Car
+};
+
 const AVAILABLE_MODES = [
-  { id: 'car',      label: 'Car',      icon: '\u{1F697}' },
-  { id: 'bike',     label: 'Bike',     icon: '\u{1F6B2}' },
-  { id: 'walk',     label: 'Walk',     icon: '\u{1F6B6}' },
-  { id: 'transit',  label: 'Transit',  icon: '\u{1F68C}' },
-  { id: 'rickshaw', label: 'Rickshaw', icon: '\u{1F6FA}' },
+  { id: 'car',      label: 'Car',      icon: '\u{1F697}', color: MODE_COLORS.car },
+  { id: 'bike',     label: 'Bike',     icon: '\u{1F6B2}', color: MODE_COLORS.bike },
+  { id: 'walk',     label: 'Walk',     icon: '\u{1F6B6}', color: MODE_COLORS.walk },
+  { id: 'transit',  label: 'Transit',  icon: '\u{1F68C}', color: MODE_COLORS.transit },
+  { id: 'rickshaw', label: 'Rickshaw', icon: '\u{1F6FA}', color: MODE_COLORS.rickshaw },
 ];
 
 function ModeSelector({ selectedModes, onChange }) {
@@ -104,6 +112,15 @@ function ModeSelector({ selectedModes, onChange }) {
             >
               <span style={{ fontSize: 22, lineHeight: 1 }}>{mode.icon}</span>
               <span style={{ lineHeight: 1 }}>{mode.label}</span>
+              {/* Color indicator dot */}
+              <div style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: mode.color,
+                boxShadow: `0 0 4px ${mode.color}33`,
+                marginTop: 2,
+              }} />
             </button>
           );
         })}

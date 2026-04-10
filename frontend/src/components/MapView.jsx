@@ -7,12 +7,24 @@
  *   - Route polyline visualization (from API response geometry)
  *   - Click handler for setting origin/destination
  *   - Custom FAB zoom controls (replaces default Leaflet controls)
+ *   - Color-coded nodes based on transportation mode selection
  */
 
 import { createPortal } from 'react-dom';
 import { useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMapEvents, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
+
+// ─── Transportation Mode to Color Mapping ───────────────────────
+const MODE_COLORS = {
+  walk: '#ef4444',      // Red for Walking
+  bike: '#eab308',      // Yellow for Cycling
+  transit: '#3b82f6',   // Blue for Bus/Transit
+  rickshaw: '#22c55e',  // Green for Rickshaw
+  car: '#a855f7',       // Purple for Car
+};
+
+const getModeColor = (mode) => MODE_COLORS[mode] || '#60a5fa'; // Default blue if mode not found
 
 const originIcon = new L.DivIcon({
   className: '',
@@ -129,7 +141,7 @@ function MapFABControls({ defaultCenter, defaultZoom }) {
 
 // ─── Main MapView Component ───────────────────────────────────────
 
-function MapView({ origin, destination, routeResult, graphNodes, onMapClick, onOriginDrag, onDestinationDrag }) {
+function MapView({ origin, destination, routeResult, graphNodes, modes = ['car'], onMapClick, onOriginDrag, onDestinationDrag }) {
   // Default center: Ahsanullah University of Science and Technology area
   const defaultCenter = [23.7639, 90.4066];
   const defaultZoom = 14;
@@ -214,7 +226,7 @@ function MapView({ origin, destination, routeResult, graphNodes, onMapClick, onO
         <Polyline
           positions={routeCoords}
           pathOptions={{
-            color: '#22c55e',
+            color: modes.length > 0 ? getModeColor(modes[0]) : '#22c55e',
             weight: 5,
             opacity: 0.85,
             lineCap: 'round',
@@ -223,20 +235,25 @@ function MapView({ origin, destination, routeResult, graphNodes, onMapClick, onO
         />
       )}
 
-      {/* ─── Graph node dots (all road junction nodes) ───── */}
-      {nodeCoords.map((position, idx) => (
-        <CircleMarker
-          key={`graph-node-${idx}`}
-          center={position}
-          radius={1.8}
-          pathOptions={{
-            color: '#60a5fa',
-            weight: 0,
-            fillColor: '#60a5fa',
-            fillOpacity: 0.8,
-          }}
-        />
-      ))}
+      {/* ─── Graph node dots with mode-based coloring ───── */}
+      {nodeCoords.map((position, idx) => {
+        // Use primary mode color or multi-modal blend
+        const nodeColor = modes.length > 0 ? getModeColor(modes[0]) : '#60a5fa';
+        
+        return (
+          <CircleMarker
+            key={`graph-node-${idx}`}
+            center={position}
+            radius={1.8}
+            pathOptions={{
+              color: nodeColor,
+              weight: 0,
+              fillColor: nodeColor,
+              fillOpacity: 0.8,
+            }}
+          />
+        );
+      })}
     </MapContainer>
   );
 }

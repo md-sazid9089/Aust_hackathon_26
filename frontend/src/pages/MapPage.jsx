@@ -9,6 +9,7 @@ import MapView from '../components/MapView';
 import RoutePanel from '../components/RoutePanel';
 import ModeSelector from '../components/ModeSelector';
 import AnomalyAlert from '../components/AnomalyAlert';
+import ColorLegend from '../components/ColorLegend';
 import { computeRoute } from '../services/routeService';
 import { getGraphSnapshot } from '../services/api';
 
@@ -108,6 +109,7 @@ function MapPage({ apiStatus }) {
           destination={destination}
           routeResult={routeResult}
           graphNodes={graphNodes}
+          modes={modes}
           onMapClick={handleMapClick}
           onOriginDrag={handleOriginDrag}
           onDestinationDrag={handleDestinationDrag}
@@ -122,6 +124,9 @@ function MapPage({ apiStatus }) {
         background: 'linear-gradient(135deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.15) 50%, rgba(0,0,0,0.35) 100%)',
         pointerEvents: 'none',
       }} />
+
+      {/* Color Legend */}
+      <ColorLegend />
 
       {/* Floating side panel */}
       <div style={{
