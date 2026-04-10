@@ -34,6 +34,7 @@ function RoutePanel({
   onClear 
 }) {
   const hasPoints = origin && destination;
+  const isMultimodalMode = routeMode === 'multimodal';
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -87,35 +88,35 @@ function RoutePanel({
         <button
           id="btn-compute-route"
           onClick={onCompute}
-          disabled={!hasPoints || isLoading}
+          disabled={!hasPoints || isLoading || isMultimodalMode}
           style={{
             flex: 1,
             padding: '12px 0',
             borderRadius: 14,
             border: 'none',
-            cursor: (!hasPoints || isLoading) ? 'not-allowed' : 'pointer',
+            cursor: (!hasPoints || isLoading || isMultimodalMode) ? 'not-allowed' : 'pointer',
             fontWeight: 800,
             fontSize: 13,
             fontFamily: 'Inter, system-ui, sans-serif',
             letterSpacing: '-0.01em',
-            background: (!hasPoints || isLoading)
+            background: (!hasPoints || isLoading || isMultimodalMode)
               ? 'rgba(255,255,255,0.04)'
               : 'linear-gradient(135deg, #16a34a, #22c55e)',
-            color: (!hasPoints || isLoading) ? '#404040' : '#0a0a0a',
-            boxShadow: (!hasPoints || isLoading)
+            color: (!hasPoints || isLoading || isMultimodalMode) ? '#404040' : '#0a0a0a',
+            boxShadow: (!hasPoints || isLoading || isMultimodalMode)
               ? 'none'
               : '0 8px 24px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.15)',
             transition: 'all 0.2s ease',
           }}
           onMouseEnter={e => {
-            if (hasPoints && !isLoading) {
+            if (hasPoints && !isLoading && !isMultimodalMode) {
               e.currentTarget.style.transform = 'translateY(-1px)';
               e.currentTarget.style.boxShadow = '0 12px 32px rgba(34,197,94,0.50), inset 0 1px 0 rgba(255,255,255,0.15)';
             }
           }}
           onMouseLeave={e => {
             e.currentTarget.style.transform = 'none';
-            e.currentTarget.style.boxShadow = (!hasPoints || isLoading) ? 'none'
+            e.currentTarget.style.boxShadow = (!hasPoints || isLoading || isMultimodalMode) ? 'none'
               : '0 8px 24px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.15)';
           }}
         >
@@ -137,19 +138,19 @@ function RoutePanel({
         <button
           id="btn-compute-multimodal"
           onClick={onComputeMultimodal}
-          disabled={!hasPoints || isLoading}
+          disabled={!hasPoints || isLoading || !isMultimodalMode}
           style={{
             padding: '12px 10px',
             borderRadius: 14,
             border: '1.5px solid rgba(59,130,246,0.35)',
-            background: (!hasPoints || isLoading)
+            background: (!hasPoints || isLoading || !isMultimodalMode)
               ? 'rgba(255,255,255,0.03)'
               : 'rgba(59,130,246,0.12)',
-            color: (!hasPoints || isLoading) ? '#404040' : '#93c5fd',
+            color: (!hasPoints || isLoading || !isMultimodalMode) ? '#404040' : '#93c5fd',
             fontWeight: 700,
             fontSize: 11,
             fontFamily: 'Inter, system-ui, sans-serif',
-            cursor: (!hasPoints || isLoading) ? 'not-allowed' : 'pointer',
+            cursor: (!hasPoints || isLoading || !isMultimodalMode) ? 'not-allowed' : 'pointer',
             transition: 'all 0.15s ease',
           }}
         >
@@ -213,12 +214,12 @@ function RoutePanel({
       {/* Route result */}
       {routeResult && (
         <div className="animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {routeResult.legs.map((leg, idx) => (
+          {!isMultimodalMode && routeResult.legs.map((leg, idx) => (
             <LegCard key={idx} leg={leg} index={idx} totalLegs={routeResult.legs.length} />
           ))}
 
           {/* Mode switches */}
-          {routeResult.mode_switches?.length > 0 && (
+          {!isMultimodalMode && routeResult.mode_switches?.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               <SectionLabel text="Mode Transfers" />
               {routeResult.mode_switches.map((sw, idx) => (
@@ -246,7 +247,7 @@ function RoutePanel({
           )}
 
           {/* Anomalies avoided */}
-          {routeResult.anomalies_avoided > 0 && (
+          {!isMultimodalMode && routeResult.anomalies_avoided > 0 && (
             <div style={{
               padding: '10px 14px',
               background: 'rgba(245,158,11,0.06)',
@@ -297,7 +298,7 @@ function RoutePanel({
           )}
 
           {/* Real multimodal recommendation output */}
-          {Array.isArray(routeResult.multimodal_suggestions) && routeResult.multimodal_suggestions.length > 0 && (
+          {isMultimodalMode && Array.isArray(routeResult.multimodal_suggestions) && routeResult.multimodal_suggestions.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <SectionLabel text="Multimodal Suggestions" icon={'\u2728'} />
               {routeResult.multimodal_suggestions.map((s, idx) => (
@@ -356,9 +357,12 @@ function RoutePanel({
                         </span>
                         <span style={{ color: '#525252', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>
                           {(seg.vehicle_options || [])
-                            .filter((v) => v.allowed)
-                            .slice(0, 3)
-                            .map((v) => `${getModeLabel(v.vehicle)}:${formatDuration(v.travel_time_s)}`)
+                            .sort((a, b) => vehicleOrder(a.vehicle) - vehicleOrder(b.vehicle))
+                            .map((v) => (
+                              v.allowed
+                                ? `${getModeLabel(v.vehicle)}:${formatDuration(v.travel_time_s)}`
+                                : `${getModeLabel(v.vehicle)}:N/A`
+                            ))
                             .join(' | ')}
                         </span>
                       </div>
@@ -374,6 +378,7 @@ function RoutePanel({
               ))}
             </div>
           )}
+
         </div>
       )}
 
@@ -677,6 +682,17 @@ function getModeLabel(mode) {
     bus: 'Bus',
     rickshaw: 'Rickshaw',
   })[mode] || mode;
+}
+
+function vehicleOrder(mode) {
+  return ({
+    transit: 1,
+    bus: 1,
+    car: 2,
+    bike: 3,
+    rickshaw: 4,
+    walk: 5,
+  })[mode] || 99;
 }
 
 function formatDistance(meters) {
