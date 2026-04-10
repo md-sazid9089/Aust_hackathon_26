@@ -14,10 +14,11 @@ import { useState, useEffect } from 'react';
 import HomePage from './pages/HomePage';
 import MapPage from './pages/MapPage';
 import LoginPage from './pages/LoginPage';
+import SignUpPage from './pages/SignUpPage';
 import { checkHealth } from './services/api';
 
 function App() {
-  const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'map' | 'login'
+  const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'map' | 'login' | 'signup'
   const [apiStatus, setApiStatus] = useState(null);       // health check result
 
   // Check backend health on mount
@@ -157,6 +158,35 @@ function App() {
             Sign In
           </button>
 
+          {/* Sign Up Button */}
+          <button
+            id="nav-signup"
+            onClick={() => setCurrentPage('signup')}
+            style={{
+              padding: '7px 18px',
+              borderRadius: 999, fontSize: 13, fontWeight: 600,
+              border: 'none', cursor: 'pointer',
+              background: 'linear-gradient(135deg, rgba(168,85,247,0.25), rgba(99,102,241,0.25))',
+              color: '#c4b5fd',
+              boxShadow: '0 2px 8px rgba(168,85,247,0.20)',
+              transition: 'all 0.18s ease',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(168,85,247,0.35), rgba(99,102,241,0.35))';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(168,85,247,0.35)';
+              e.currentTarget.style.transform = 'scale(1.02)';
+            }}
+            onMouseLeave={e => {
+              if (currentPage !== 'signup') {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(168,85,247,0.25), rgba(99,102,241,0.25))';
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(168,85,247,0.20)';
+                e.currentTarget.style.transform = 'scale(1)';
+              }
+            }}
+          >
+            Sign Up
+          </button>
+
           {/* Launch CTA — green */}
           <button
             onClick={() => setCurrentPage('map')}
@@ -216,19 +246,21 @@ function App() {
       ══════════════════════════════════════════════════ */}
       <main style={{
         flex: 1, position: 'relative',
-        paddingTop: isMapPage ? 0 : currentPage === 'login' ? 0 : 76,   /* no padding for map and login pages */
+        paddingTop: isMapPage || currentPage === 'login' || currentPage === 'signup' ? 0 : 76,   /* no padding for map, login, and signup pages */
       }}>
         {currentPage === 'home' ? (
           <HomePage onNavigateToMap={() => setCurrentPage('map')} apiStatus={apiStatus} />
         ) : currentPage === 'login' ? (
           <LoginPage onNavigateToHome={() => setCurrentPage('home')} />
+        ) : currentPage === 'signup' ? (
+          <SignUpPage onNavigateToHome={() => setCurrentPage('home')} onNavigateToLogin={() => setCurrentPage('login')} />
         ) : (
           <MapPage apiStatus={apiStatus} />
         )}
       </main>
 
       {/* Footer — hidden on map and login pages */}
-      {!isMapPage && currentPage !== 'login' && (
+      {!isMapPage && currentPage !== 'login' && currentPage !== 'signup' && (
         <footer className="app-footer">
           <span>GoliTransit AI — Multi-Modal Hyper-Local Routing Engine</span>
           <span style={{ color: 'rgba(255,255,255,0.12)' }}>v0.1.0-hackathon</span>
