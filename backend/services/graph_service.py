@@ -142,6 +142,8 @@ class GraphService:
         self._center_lat = float(settings.graph_center_lat)
         self._center_lng = float(settings.graph_center_lng)
         self._radius_m = float(settings.graph_radius_m)
+        self._mode_subgraph_cache: dict[str, nx.MultiDiGraph] = {}
+        self._graph_version: int = 0
 
     def load_graph(self, location: Optional[str] = None):
         """Download/load OSM graph and normalize edge attributes for routing."""
@@ -154,29 +156,35 @@ class GraphService:
         graph: Optional[nx.MultiDiGraph] = None
 
         try:
-            # Always build a local neighborhood graph for hackathon scope:
-            # all roads (main roads + small gullies) within 2km around AUST.
-            graph = ox.graph_from_point(
-                center_point=(self._center_lat, self._center_lng),
-                dist=self._radius_m,
-                dist_type="bbox",
-                network_type=settings.network_type,
-                simplify=settings.simplify_graph,
-            )
+            if location != settings.osm_location:
+                graph = ox.graph_from_place(
+                    location,
+                    network_type=settings.network_type,
+                    simplify=settings.simplify_graph,
+                )
+            else:
+                # Default runtime path: local neighborhood graph around AUST.
+                graph = ox.graph_from_point(
+                    center_point=(self._center_lat, self._center_lng),
+                    dist=self._radius_m,
+                    dist_type="bbox",
+                    network_type=settings.network_type,
+                    simplify=settings.simplify_graph,
+                )
 
-            # Enforce strict circular radius (not just bounding box).
-            nodes_outside = []
-            for node_id, node_data in graph.nodes(data=True):
-                y = float(node_data.get("y") or 0.0)
-                x = float(node_data.get("x") or 0.0)
-                if (
-                    _haversine_m(self._center_lat, self._center_lng, y, x)
-                    > self._radius_m
-                ):
-                    nodes_outside.append(node_id)
+                # Enforce strict circular radius (not just bounding box).
+                nodes_outside = []
+                for node_id, node_data in graph.nodes(data=True):
+                    y = float(node_data.get("y") or 0.0)
+                    x = float(node_data.get("x") or 0.0)
+                    if (
+                        _haversine_m(self._center_lat, self._center_lng, y, x)
+                        > self._radius_m
+                    ):
+                        nodes_outside.append(node_id)
 
-            if nodes_outside:
-                graph.remove_nodes_from(nodes_outside)
+                if nodes_outside:
+                    graph.remove_nodes_from(nodes_outside)
 
             # Keep only the largest connected component to avoid tiny disconnected scraps.
             if graph.number_of_nodes() > 0:
@@ -192,10 +200,41 @@ class GraphService:
 
         self._graph = graph
         self._normalize_edge_attributes()
+        self._rebuild_mode_subgraph_cache()
+        self._graph_version = 1
         self._loaded = True
         print(
             f"[GraphService] Graph loaded — {self.node_count()} nodes, {self.edge_count()} edges"
         )
+
+    def _rebuild_mode_subgraph_cache(self):
+        self._mode_subgraph_cache = {}
+        if not self._graph:
+            return
+
+        for mode in settings.vehicle_types.keys():
+            mode_flag = f"{mode}_allowed"
+            edges = [
+                (u, v, k)
+                for u, v, k, data in self._graph.edges(keys=True, data=True)
+                if bool(data.get(mode_flag, False))
+            ]
+            if edges:
+                self._mode_subgraph_cache[mode] = self._graph.edge_subgraph(edges).copy()
+            else:
+                self._mode_subgraph_cache[mode] = nx.MultiDiGraph()
+
+    def get_graph_version(self) -> int:
+        return int(self._graph_version)
+
+    def mark_graph_changed(
+        self,
+        *,
+        mode_constraints_changed: bool = False,
+    ):
+        self._graph_version += 1
+        if mode_constraints_changed:
+            self._rebuild_mode_subgraph_cache()
 
     def _normalize_edge_attributes(self):
         if not self._graph:
@@ -532,22 +571,30 @@ class GraphService:
         if not self._graph:
             return None
 
+        cached = self._mode_subgraph_cache.get(mode)
+        if cached is not None:
+            return cached
+
         mode_flag = f"{mode}_allowed"
         edges = [
             (u, v, k)
             for u, v, k, data in self._graph.edges(keys=True, data=True)
             if bool(data.get(mode_flag, False))
         ]
-
         if not edges:
-            return nx.MultiDiGraph()
+            graph = nx.MultiDiGraph()
+            self._mode_subgraph_cache[mode] = graph
+            return graph
 
-        return self._graph.edge_subgraph(edges).copy()
+        graph = self._graph.edge_subgraph(edges).copy()
+        self._mode_subgraph_cache[mode] = graph
+        return graph
 
     def update_edge_weight(self, source: str, target: str, multiplier: float):
         if not self._graph:
             return
 
+        changed = False
         if self._graph.has_edge(source, target):
             for key in self._graph[source][target]:
                 edge_data = self._graph[source][target][key]
@@ -558,11 +605,16 @@ class GraphService:
                 )
                 edge_data["travel_time"] = base * multiplier
                 edge_data["anomaly_multiplier"] = multiplier
+                changed = True
+
+        if changed:
+            self.mark_graph_changed(mode_constraints_changed=False)
 
     def reset_edge_weight(self, source: str, target: str):
         if not self._graph:
             return
 
+        changed = False
         if self._graph.has_edge(source, target):
             for key in self._graph[source][target]:
                 edge_data = self._graph[source][target][key]
@@ -572,16 +624,25 @@ class GraphService:
                     or 0.0
                 )
                 edge_data["anomaly_multiplier"] = 1.0
+                changed = True
+
+        if changed:
+            self.mark_graph_changed(mode_constraints_changed=False)
 
     def set_ml_predicted_weight(self, source: str, target: str, predicted_time: float):
         if not self._graph:
             return
 
+        changed = False
         if self._graph.has_edge(source, target):
             for key in self._graph[source][target]:
                 edge_data = self._graph[source][target][key]
                 edge_data["travel_time"] = float(predicted_time)
                 edge_data["ml_predicted"] = True
+                changed = True
+
+        if changed:
+            self.mark_graph_changed(mode_constraints_changed=False)
 
     def get_snapshot(
         self, include_edges: bool = False, bbox: Optional[tuple] = None, mode_filter: Optional[str] = None

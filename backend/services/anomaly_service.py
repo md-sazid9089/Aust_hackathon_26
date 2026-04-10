@@ -40,6 +40,8 @@ class AnomalyService:
         self._pedestrian_zone_rickshaw_allowed = bool(
             settings.anomaly_config.get("pedestrian_zone_rickshaw_allowed", True)
         )
+        self._applied_edge_effects: dict[str, dict] = {}
+        self._edge_resolve_cache: dict[str, tuple | None] = {}
 
     # ─── Ingest ──────────────────────────────────────────────────
 
@@ -162,9 +164,6 @@ class AnomalyService:
         for aid in expired_ids:
             self._active.pop(aid, None)
 
-        # Reset to base per-mode state, then re-apply all active-in-window anomalies.
-        self._reset_all_edges_to_base(graph)
-
         edge_mode_max_multiplier: dict[tuple[str, str], float] = {}
         edge_disabled_modes: dict[str, set[str]] = {}
 
@@ -186,11 +185,84 @@ class AnomalyService:
                         float(mul),
                     )
 
+        desired_effects: dict[str, dict] = {}
         for (edge_id, mode), multiplier in edge_mode_max_multiplier.items():
-            self._apply_weight_multiplier(edge_id, mode, multiplier)
+            entry = desired_effects.setdefault(
+                edge_id,
+                {"multipliers": {}, "disabled_modes": set()},
+            )
+            entry["multipliers"][mode] = float(multiplier)
 
         for edge_id, disabled_modes in edge_disabled_modes.items():
-            self._disable_edge_modes(edge_id, disabled_modes)
+            entry = desired_effects.setdefault(
+                edge_id,
+                {"multipliers": {}, "disabled_modes": set()},
+            )
+            entry["disabled_modes"].update(disabled_modes)
+
+        all_edge_ids = set(self._applied_edge_effects.keys()).union(
+            set(desired_effects.keys())
+        )
+
+        changed_pairs: set[tuple] = set()
+        mode_constraints_changed = False
+
+        for edge_id in all_edge_ids:
+            current = self._applied_edge_effects.get(
+                edge_id,
+                {"multipliers": {}, "disabled_modes": set()},
+            )
+            target = desired_effects.get(
+                edge_id,
+                {"multipliers": {}, "disabled_modes": set()},
+            )
+
+            current_multipliers = current.get("multipliers", {})
+            current_disabled = set(current.get("disabled_modes", set()))
+            target_multipliers = target.get("multipliers", {})
+            target_disabled = set(target.get("disabled_modes", set()))
+
+            if (
+                current_multipliers == target_multipliers
+                and current_disabled == target_disabled
+            ):
+                continue
+
+            resolved = self._resolve_graph_edge_nodes(edge_id)
+            if not resolved:
+                continue
+
+            source, target_node = resolved
+            changed_pairs.add((source, target_node))
+
+            self._reset_edge_to_base(source, target_node)
+
+            for mode, multiplier in target_multipliers.items():
+                self._apply_edge_mode_current_weight(
+                    source,
+                    target_node,
+                    mode,
+                    multiplier,
+                )
+
+            if target_disabled:
+                self._disable_edge_modes_on_pair(source, target_node, target_disabled)
+
+            if current_disabled or target_disabled:
+                mode_constraints_changed = True
+
+        normalized_effects: dict[str, dict] = {}
+        for edge_id, effect in desired_effects.items():
+            normalized_effects[edge_id] = {
+                "multipliers": dict(effect.get("multipliers", {})),
+                "disabled_modes": set(effect.get("disabled_modes", set())),
+            }
+        self._applied_edge_effects = normalized_effects
+
+        if changed_pairs:
+            graph_service.mark_graph_changed(
+                mode_constraints_changed=mode_constraints_changed,
+            )
 
     async def clear_all(self) -> int:
         self.sync_active_effects()
@@ -456,6 +528,9 @@ class AnomalyService:
             return
 
         source, target = resolved
+        self._disable_edge_modes_on_pair(source, target, modes)
+
+    def _disable_edge_modes_on_pair(self, source: str, target: str, modes: set[str]):
         graph = graph_service.get_graph()
         if not graph or not graph.has_edge(source, target):
             return
@@ -466,6 +541,33 @@ class AnomalyService:
                 edge_data[f"{mode}_allowed"] = False
                 if "constraints" in edge_data:
                     edge_data["constraints"][f"{mode}_allowed"] = False
+
+    def _reset_edge_to_base(self, source: str, target: str):
+        graph = graph_service.get_graph()
+        if not graph or not graph.has_edge(source, target):
+            return
+
+        for key in graph[source][target]:
+            edge_data = graph[source][target][key]
+            for mode in settings.vehicle_types.keys():
+                base_key = f"{mode}_base_travel_time"
+                time_key = f"{mode}_travel_time"
+                base = float(
+                    edge_data.get(base_key, edge_data.get(time_key, 0.0)) or 0.0
+                )
+                edge_data[time_key] = base
+                edge_data[f"{mode}_allowed"] = bool(
+                    edge_data.get(
+                        f"{mode}_base_allowed", edge_data.get(f"{mode}_allowed", True)
+                    )
+                )
+
+                if "weights" in edge_data:
+                    edge_data["weights"][mode] = base
+                if "constraints" in edge_data:
+                    edge_data["constraints"][f"{mode}_allowed"] = bool(
+                        edge_data.get(f"{mode}_allowed", True)
+                    )
 
     def _reset_all_edges_to_base(self, graph):
         for _u, _v, _k, edge_data in graph.edges(keys=True, data=True):
@@ -507,6 +609,12 @@ class AnomalyService:
         if graph is None:
             return None
 
+        cached = self._edge_resolve_cache.get(edge_id)
+        if cached is not None:
+            source, target = cached
+            if graph.has_edge(source, target):
+                return cached
+
         parts = edge_id.split("->")
         if len(parts) != 2:
             return None
@@ -520,8 +628,10 @@ class AnomalyService:
         for source in source_candidates:
             for target in target_candidates:
                 if graph.has_edge(source, target):
+                    self._edge_resolve_cache[edge_id] = (source, target)
                     return source, target
 
+        self._edge_resolve_cache[edge_id] = None
         return None
 
     def _candidate_node_ids(self, graph, token: str):

@@ -7,6 +7,8 @@ Computes shortest paths over the in-memory OSM road graph.
 from __future__ import annotations
 
 import math
+import time
+from collections import OrderedDict
 from typing import Callable
 
 import networkx as nx
@@ -39,6 +41,11 @@ class RoutingEngine:
         self._max_alts = settings.max_alternatives
         self._max_transfers = settings.multimodal_max_transfers
         self._transfer_radius = settings.transfer_radius_meters
+        self._shortest_tree_cache: OrderedDict[tuple, tuple[dict, dict, float]] = OrderedDict()
+        self._shortest_tree_cache_max = 256
+        self._route_response_cache: OrderedDict[tuple, tuple[RouteResponse, float]] = OrderedDict()
+        self._route_response_cache_max = 512
+        self._route_response_ttl_s = 90.0
 
     def _normalize_mode(self, mode: str) -> str:
         if mode == "bus":
@@ -46,15 +53,159 @@ class RoutingEngine:
         return mode
 
     def _display_mode(self, mode: str) -> str:
-        if mode == "transit":
-            return "bus"
-        return mode
+        return self._normalize_mode(mode)
+
+    def _current_graph_version(self) -> int:
+        getter = getattr(graph_service, "get_graph_version", None)
+        if callable(getter):
+            try:
+                return int(getter())
+            except Exception:
+                return 0
+        return 0
+
+    def _clone_response(self, response: RouteResponse) -> RouteResponse:
+        if hasattr(response, "model_copy"):
+            return response.model_copy(deep=True)
+        return response.copy(deep=True)
+
+    def _route_cache_key(
+        self,
+        request: RouteRequest,
+        origin_anchor,
+        destination_anchor,
+    ) -> tuple:
+        return (
+            tuple(request.modes),
+            str(request.optimize),
+            bool(request.avoid_anomalies),
+            int(request.max_alternatives or self._max_alts),
+            bool(getattr(request, "include_multimodal", False)),
+            origin_anchor,
+            destination_anchor,
+            self._current_graph_version(),
+        )
+
+    def _route_cache_get(self, key: tuple) -> RouteResponse | None:
+        entry = self._route_response_cache.get(key)
+        if entry is None:
+            return None
+        response, ts = entry
+        if (time.monotonic() - ts) > self._route_response_ttl_s:
+            self._route_response_cache.pop(key, None)
+            return None
+        self._route_response_cache.move_to_end(key)
+        return self._clone_response(response)
+
+    def _route_cache_set(self, key: tuple, response: RouteResponse):
+        self._route_response_cache[key] = (self._clone_response(response), time.monotonic())
+        self._route_response_cache.move_to_end(key)
+        while len(self._route_response_cache) > self._route_response_cache_max:
+            self._route_response_cache.popitem(last=False)
+
+    def _tree_cache_key(
+        self,
+        graph: nx.MultiDiGraph,
+        origin_node,
+        mode: str,
+        optimize: str,
+    ) -> tuple:
+        return (
+            self._current_graph_version(),
+            id(graph),
+            bool(graph.is_directed()),
+            mode,
+            optimize,
+            origin_node,
+        )
+
+    def _get_shortest_path_tree(
+        self,
+        graph: nx.MultiDiGraph,
+        origin_node,
+        mode: str,
+        optimize: str,
+    ) -> tuple[dict, dict] | tuple[None, None]:
+        key = self._tree_cache_key(graph, origin_node, mode, optimize)
+        cached = self._shortest_tree_cache.get(key)
+        if cached is not None:
+            lengths, paths, _ts = cached
+            self._shortest_tree_cache.move_to_end(key)
+            return lengths, paths
+
+        weight_fn = self._build_weight_fn(mode, optimize)
+        try:
+            lengths, paths = nx.single_source_dijkstra(
+                graph,
+                source=origin_node,
+                weight=weight_fn,
+            )
+        except Exception:
+            return None, None
+
+        self._shortest_tree_cache[key] = (lengths, paths, time.monotonic())
+        self._shortest_tree_cache.move_to_end(key)
+        while len(self._shortest_tree_cache) > self._shortest_tree_cache_max:
+            self._shortest_tree_cache.popitem(last=False)
+
+        return lengths, paths
+
+    def _pick_best_path_from_tree(
+        self,
+        lengths: dict,
+        paths: dict,
+        destination_candidates: list,
+    ) -> tuple[object | None, list | None, float]:
+        best_dest = None
+        best_path = None
+        best_cost = float("inf")
+        for dest_node in destination_candidates:
+            if dest_node not in lengths:
+                continue
+            candidate_path = paths.get(dest_node)
+            if not candidate_path or len(candidate_path) < 2:
+                continue
+            candidate_cost = float(lengths[dest_node])
+            if candidate_cost < best_cost:
+                best_cost = candidate_cost
+                best_dest = dest_node
+                best_path = candidate_path
+        return best_dest, best_path, best_cost
 
     async def compute(self, request: RouteRequest) -> RouteResponse:
         await self._refresh_ml_weights()
         anomaly_service.sync_active_effects()
 
         request.modes = [self._normalize_mode(m) for m in request.modes]
+
+        full_graph = graph_service.get_graph()
+        origin_candidates_hint: list = []
+        destination_candidates_hint: list = []
+        origin_anchor = None
+        destination_anchor = None
+
+        if full_graph is not None and full_graph.number_of_nodes() > 0:
+            origin_candidates_hint = graph_service.get_k_nearest_nodes_in_graph(
+                full_graph,
+                request.origin.lat,
+                request.origin.lng,
+                k=8,
+            )
+            destination_candidates_hint = graph_service.get_k_nearest_nodes_in_graph(
+                full_graph,
+                request.destination.lat,
+                request.destination.lng,
+                k=8,
+            )
+            if origin_candidates_hint:
+                origin_anchor = origin_candidates_hint[0]
+            if destination_candidates_hint:
+                destination_anchor = destination_candidates_hint[0]
+
+        cache_key = self._route_cache_key(request, origin_anchor, destination_anchor)
+        cached_response = self._route_cache_get(cache_key)
+        if cached_response is not None:
+            return cached_response
 
         if len(request.modes) == 1:
             legs, switches, anomalies_avoided = await self._single_modal(
@@ -63,6 +214,8 @@ class RoutingEngine:
                 mode=request.modes[0],
                 optimize=request.optimize,
                 avoid_anomalies=request.avoid_anomalies,
+                origin_candidates_hint=origin_candidates_hint,
+                destination_candidates_hint=destination_candidates_hint,
             )
         else:
             legs, switches, anomalies_avoided = await self._multi_modal(
@@ -71,6 +224,8 @@ class RoutingEngine:
                 modes=request.modes,
                 optimize=request.optimize,
                 avoid_anomalies=request.avoid_anomalies,
+                origin_candidates_hint=origin_candidates_hint,
+                destination_candidates_hint=destination_candidates_hint,
             )
 
         total_dist = sum(leg.distance_m for leg in legs)
@@ -107,7 +262,7 @@ class RoutingEngine:
             hour_of_day=request.traffic_hour_of_day,
         )
 
-        return RouteResponse(
+        response = RouteResponse(
             legs=[
                 RouteLeg(
                     mode=self._display_mode(leg.mode),
@@ -115,10 +270,7 @@ class RoutingEngine:
                     distance_m=leg.distance_m,
                     duration_s=leg.duration_s,
                     cost=leg.cost,
-                    instructions=[
-                        instr.replace(" transit ", " bus ").replace("transit", "bus")
-                        for instr in leg.instructions
-                    ],
+                    instructions=leg.instructions,
                 )
                 for leg in legs
             ],
@@ -141,6 +293,9 @@ class RoutingEngine:
             traffic_jam_prediction=traffic_prediction,
         )
 
+        self._route_cache_set(cache_key, response)
+        return response
+
     async def _single_modal(
         self,
         origin: LatLng,
@@ -148,6 +303,8 @@ class RoutingEngine:
         mode: str,
         optimize: str,
         avoid_anomalies: bool,
+        origin_candidates_hint: list | None = None,
+        destination_candidates_hint: list | None = None,
     ) -> tuple[list[RouteLeg], list[ModeSwitch], int]:
         del avoid_anomalies  # Placeholder until anomaly filtering is added.
 
@@ -167,51 +324,64 @@ class RoutingEngine:
             leg = self._build_synthetic_leg(mode, origin, destination)
             return [leg], [], 0
 
-        # Try several nearby nodes on each side to avoid false "no path" when
-        # the nearest nodes happen to land in disconnected fragments.
-        origin_candidates = graph_service.get_k_nearest_nodes_in_graph(
-            graph, origin.lat, origin.lng, k=8
-        )
-        dest_candidates = graph_service.get_k_nearest_nodes_in_graph(
-            graph, destination.lat, destination.lng, k=8
-        )
+        if origin_candidates_hint:
+            origin_candidates = [n for n in origin_candidates_hint if n in graph]
+        else:
+            origin_candidates = []
+
+        if destination_candidates_hint:
+            dest_candidates = [n for n in destination_candidates_hint if n in graph]
+        else:
+            dest_candidates = []
+
+        if not origin_candidates:
+            origin_candidates = graph_service.get_k_nearest_nodes_in_graph(
+                graph, origin.lat, origin.lng, k=8
+            )
+        if not dest_candidates:
+            dest_candidates = graph_service.get_k_nearest_nodes_in_graph(
+                graph, destination.lat, destination.lng, k=8
+            )
 
         if not origin_candidates or not dest_candidates:
             leg = self._build_synthetic_leg(mode, origin, destination)
             return [leg], [], 0
 
-        weight_fn = self._build_weight_fn(mode, optimize)
+        def _find_best_path(candidate_graph, max_origins: int = 2):
+            best_pair = None
+            best_path = None
+            best_cost = float("inf")
+            origins_to_try = origin_candidates[: max(1, int(max_origins))]
+            for origin_node in origins_to_try:
+                lengths, paths = self._get_shortest_path_tree(
+                    candidate_graph,
+                    origin_node,
+                    mode,
+                    optimize,
+                )
+                if lengths is None or paths is None:
+                    continue
 
-        def _find_best_path(candidate_graph):
-            pair = None
-            path = None
-            hops = float("inf")
-            for o_node in origin_candidates:
-                for d_node in dest_candidates:
-                    if o_node == d_node:
-                        continue
-                    candidate_path = self._safe_shortest_path(
-                        candidate_graph, o_node, d_node, weight_fn
-                    )
-                    if (
-                        candidate_path
-                        and len(candidate_path) >= 2
-                        and len(candidate_path) < hops
-                    ):
-                        hops = len(candidate_path)
-                        pair = (o_node, d_node)
-                        path = candidate_path
-            return pair, path
+                dest_node, path, cost = self._pick_best_path_from_tree(
+                    lengths,
+                    paths,
+                    dest_candidates,
+                )
+                if path and cost < best_cost:
+                    best_cost = cost
+                    best_pair = (origin_node, dest_node)
+                    best_path = path
+            return best_pair, best_path
 
         routing_graph = graph
-        best_pair, best_path = _find_best_path(routing_graph)
+        best_pair, best_path = _find_best_path(routing_graph, max_origins=2)
 
         # For walking/bike/rickshaw/bus-like traversal, one-way directionality can
         # make reachable roads appear disconnected. Retry on undirected topology
         # before falling back to synthetic geometry.
         if best_path is None:
             routing_graph = graph.to_undirected(as_view=True)
-            best_pair, best_path = _find_best_path(routing_graph)
+            best_pair, best_path = _find_best_path(routing_graph, max_origins=3)
 
         if best_path is None:
             # If the points are essentially colocated, return a zero-length leg.
@@ -251,6 +421,7 @@ class RoutingEngine:
         traffic_edges: list[RouteTrafficEdge] = []
         total_distance_m = 0.0
         total_duration_s = 0.0
+        weight_fn = self._build_weight_fn(mode, optimize)
 
         for i in range(len(path) - 1):
             u = path[i]
@@ -317,6 +488,78 @@ class RoutingEngine:
         modes: list[str],
         optimize: str,
         avoid_anomalies: bool,
+        origin_candidates_hint: list | None = None,
+        destination_candidates_hint: list | None = None,
+    ) -> tuple[list[RouteLeg], list[ModeSwitch], int]:
+        graph = graph_service.get_graph()
+        if graph is not None and graph.number_of_nodes() > 0:
+            origin_node = None
+            dest_node = None
+
+            if origin_candidates_hint:
+                for node_id in origin_candidates_hint:
+                    if node_id in graph:
+                        origin_node = node_id
+                        break
+            if destination_candidates_hint:
+                for node_id in destination_candidates_hint:
+                    if node_id in graph:
+                        dest_node = node_id
+                        break
+
+            if origin_node is None:
+                origin_node = graph_service.get_nearest_node(origin.lat, origin.lng)
+            if dest_node is None:
+                dest_node = graph_service.get_nearest_node(destination.lat, destination.lng)
+
+            allowed_modes = list(dict.fromkeys(modes))
+            switch_penalty = float(
+                settings.mode_switch_penalties.get("default_penalty_seconds", 5.0)
+            )
+
+            if origin_node is not None and dest_node is not None and allowed_modes:
+                try:
+                    result = multi_modal_dijkstra_with_coords(
+                        graph=graph,
+                        start=origin_node,
+                        end=dest_node,
+                        allowed_modes=allowed_modes,
+                        switch_penalty=switch_penalty,
+                    )
+                    if result and result.get("path"):
+                        built = self._build_multimodal_from_state_path(
+                            graph=graph,
+                            origin=origin,
+                            destination=destination,
+                            path_steps=result["path"],
+                        )
+                        built_legs, _built_switches, _built_avoided = built
+                        requested_modes = [self._normalize_mode(m) for m in modes]
+                        built_modes = [leg.mode for leg in built_legs]
+                        if built_modes == requested_modes:
+                            return built
+                except Exception:
+                    pass
+
+        return await self._multi_modal_sequential(
+            origin=origin,
+            destination=destination,
+            modes=modes,
+            optimize=optimize,
+            avoid_anomalies=avoid_anomalies,
+            origin_candidates_hint=origin_candidates_hint,
+            destination_candidates_hint=destination_candidates_hint,
+        )
+
+    async def _multi_modal_sequential(
+        self,
+        origin: LatLng,
+        destination: LatLng,
+        modes: list[str],
+        optimize: str,
+        avoid_anomalies: bool,
+        origin_candidates_hint: list | None = None,
+        destination_candidates_hint: list | None = None,
     ) -> tuple[list[RouteLeg], list[ModeSwitch], int]:
         legs: list[RouteLeg] = []
         switches: list[ModeSwitch] = []
@@ -336,6 +579,10 @@ class RoutingEngine:
                 mode=mode,
                 optimize=optimize,
                 avoid_anomalies=avoid_anomalies,
+                origin_candidates_hint=(origin_candidates_hint if i == 0 else None),
+                destination_candidates_hint=(
+                    destination_candidates_hint if i == len(modes) - 1 else None
+                ),
             )
             legs.extend(leg_legs)
             total_anomalies_avoided += avoided
@@ -357,6 +604,131 @@ class RoutingEngine:
             current_pos = leg_dest
 
         return legs, switches, total_anomalies_avoided
+
+    def _build_multimodal_from_state_path(
+        self,
+        graph: nx.MultiDiGraph,
+        origin: LatLng,
+        destination: LatLng,
+        path_steps: list[dict],
+    ) -> tuple[list[RouteLeg], list[ModeSwitch], int]:
+        legs: list[RouteLeg] = []
+        switches: list[ModeSwitch] = []
+
+        if not path_steps:
+            return legs, switches, 0
+
+        current_mode = None
+        current_geometry: list[LatLng] = []
+        current_distance_m = 0.0
+        current_duration_s = 0.0
+        current_traffic_edges: list[RouteTrafficEdge] = []
+
+        def _finalize_leg(mode_name: str):
+            nonlocal current_geometry, current_distance_m, current_duration_s, current_traffic_edges
+            if not current_geometry:
+                return
+            cost_per_km = float(
+                settings.vehicle_types.get(mode_name, {}).get("fuel_cost_per_km", 0.0)
+                or 0.0
+            )
+            leg_cost = (current_distance_m / 1000.0) * cost_per_km
+            start_pt = current_geometry[0]
+            end_pt = current_geometry[-1]
+            legs.append(
+                RouteLeg(
+                    mode=mode_name,
+                    geometry=list(current_geometry),
+                    distance_m=current_distance_m,
+                    duration_s=current_duration_s,
+                    cost=leg_cost,
+                    traffic_edges=list(current_traffic_edges),
+                    instructions=[
+                        f"Start at ({start_pt.lat:.5f}, {start_pt.lng:.5f})",
+                        f"Follow the shortest {mode_name} route on roads",
+                        f"Arrive at ({end_pt.lat:.5f}, {end_pt.lng:.5f})",
+                    ],
+                )
+            )
+            current_geometry = []
+            current_distance_m = 0.0
+            current_duration_s = 0.0
+            current_traffic_edges = []
+
+        for step in path_steps:
+            u = step.get("from")
+            v = step.get("to")
+            step_mode = self._normalize_mode(step.get("mode") or "walk")
+
+            if current_mode is None:
+                current_mode = step_mode
+            elif step_mode != current_mode:
+                _finalize_leg(current_mode)
+                switch_loc = LatLng(
+                    lat=float(graph.nodes.get(u, {}).get("y") or 0.0),
+                    lng=float(graph.nodes.get(u, {}).get("x") or 0.0),
+                )
+                penalty_key = f"{current_mode}_to_{step_mode}"
+                penalty = settings.mode_switch_penalties.get(penalty_key, {})
+                switches.append(
+                    ModeSwitch(
+                        from_mode=current_mode,
+                        to_mode=step_mode,
+                        location=switch_loc,
+                        penalty_time_s=float(penalty.get("time_seconds", 0.0) or 0.0),
+                        penalty_cost=float(penalty.get("cost_units", 0.0) or 0.0),
+                    )
+                )
+                current_mode = step_mode
+
+            edge_data = self._best_edge_for_mode(graph, u, v, step_mode)
+            if not edge_data:
+                edge_data = self._best_edge_any(graph, u, v)
+            if not edge_data:
+                continue
+
+            current_distance_m += float(edge_data.get("length") or 0.0)
+            current_duration_s += float(
+                edge_data.get(f"{step_mode}_travel_time")
+                or edge_data.get("travel_time")
+                or 0.0
+            )
+
+            current_traffic_edges.append(
+                RouteTrafficEdge(
+                    edge_id=f"{u}->{v}:0",
+                    road_type=self._road_type(edge_data),
+                    length_m=float(edge_data.get("length") or 0.0),
+                )
+            )
+
+            edge_points = self._edge_geometry_points(graph, u, v, edge_data)
+            if current_geometry and edge_points:
+                if (
+                    current_geometry[-1].lat == edge_points[0].lat
+                    and current_geometry[-1].lng == edge_points[0].lng
+                ):
+                    current_geometry.extend(edge_points[1:])
+                else:
+                    current_geometry.extend(edge_points)
+            else:
+                current_geometry.extend(edge_points)
+
+        if current_mode is not None:
+            _finalize_leg(current_mode)
+
+        if legs:
+            first_leg = legs[0]
+            if first_leg.geometry:
+                first_leg.instructions[0] = f"Start at ({origin.lat:.5f}, {origin.lng:.5f})"
+
+            last_leg = legs[-1]
+            if last_leg.geometry:
+                last_leg.instructions[-1] = (
+                    f"Arrive at ({destination.lat:.5f}, {destination.lng:.5f})"
+                )
+
+        return legs, switches, 0
 
     def _build_weight_fn(self, mode: str, optimize: str) -> Callable:
         def weight(u, v, data):
