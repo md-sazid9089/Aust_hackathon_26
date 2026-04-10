@@ -16,7 +16,6 @@ const AVAILABLE_MODES = [
 
 function ModeSelector({ selectedModes, onChange }) {
   const selectSingle = (modeId) => onChange([modeId]);
-  const appendMode = (modeId) => onChange([...selectedModes, modeId]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -109,7 +108,7 @@ function ModeSelector({ selectedModes, onChange }) {
         })}
       </div>
 
-      {/* Sequence bar */}
+      {/* Single-mode summary */}
       <div style={{
         background: 'rgba(0,0,0,0.30)',
         border: '1px solid rgba(255,255,255,0.05)',
@@ -120,7 +119,6 @@ function ModeSelector({ selectedModes, onChange }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: 7,
         }}>
           <span style={{
             fontSize: 9, fontWeight: 800,
@@ -129,94 +127,17 @@ function ModeSelector({ selectedModes, onChange }) {
             color: '#404040',
             fontFamily: 'JetBrains Mono, monospace',
           }}>
-            Sequence
+            Selected Mode
           </span>
-
-          {/* Quick add icons */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            {AVAILABLE_MODES.map((m) => (
-              <button
-                key={`add-${m.id}`}
-                onClick={() => appendMode(m.id)}
-                title={`Append ${m.label}`}
-                style={{
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.06)',
-                  borderRadius: 6,
-                  padding: '2px 5px',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  lineHeight: 1,
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = 'rgba(139,92,246,0.15)';
-                  e.currentTarget.style.borderColor = 'rgba(139,92,246,0.40)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
-                }}
-              >
-                {m.icon}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Sequence pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', minHeight: 24 }}>
-          {selectedModes.map((modeId, idx) => {
-            const mode = AVAILABLE_MODES.find((m) => m.id === modeId);
-            return (
-              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                {idx > 0 && (
-                  <span style={{
-                    color: '#333',
-                    fontSize: 10,
-                    fontFamily: 'JetBrains Mono, monospace',
-                    fontWeight: 700,
-                  }}>
-                    {'\u2192'}
-                  </span>
-                )}
-                <span
-                  onClick={() => {
-                    const newModes = selectedModes.filter((_, i) => i !== idx);
-                    if (newModes.length > 0) onChange(newModes);
-                  }}
-                  title="Click to remove"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    padding: '4px 10px',
-                    background: 'rgba(139,92,246,0.15)',
-                    border: '1px solid rgba(139,92,246,0.35)',
-                    borderRadius: 999,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: '#a78bfa',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    fontFamily: 'Inter, system-ui, sans-serif',
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.background = 'rgba(239,68,68,0.12)';
-                    e.currentTarget.style.borderColor = 'rgba(239,68,68,0.40)';
-                    e.currentTarget.style.color = '#f87171';
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.background = 'rgba(139,92,246,0.15)';
-                    e.currentTarget.style.borderColor = 'rgba(139,92,246,0.35)';
-                    e.currentTarget.style.color = '#a78bfa';
-                  }}
-                >
-                  {mode?.icon} {mode?.label}
-                </span>
-              </div>
-            );
-          })}
+          <span style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: '#a78bfa',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            textTransform: 'capitalize',
+          }}>
+            {(selectedModes && selectedModes[0]) || 'car'}
+          </span>
         </div>
       </div>
     </div>
