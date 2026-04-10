@@ -154,7 +154,8 @@ jobs:
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
 
       - name: Add preview URL to job summary
-        run: echo "Vercel preview: ${{ steps.preview_deploy.outputs.preview_url }}" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "Vercel preview: ${{ steps.preview_deploy.outputs.preview_url }}" >> "$GITHUB_STEP_SUMMARY"
 
     # Note: The Vercel token (VERCEL_TOKEN) must be stored as a GitHub Actions secret. Do NOT expose it in logs or outputs.
     # Production frontend deploy URL: https://aust-hackathon-26.vercel.app/
