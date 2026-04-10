@@ -22,8 +22,8 @@ orjson==3.9.15
 # Database
 SQLAlchemy==2.0.29
 pymysql==1.1.0
+cryptography==46.0.7
 
 # Testing
 pytest==7.4.4
 pytest-asyncio==0.23.4
-httpx  # also used as async test client
