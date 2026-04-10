@@ -61,6 +61,8 @@ services:
       dockerfile: Dockerfile
     container_name: golitransit-backend
     restart: unless-stopped
+    env_file:
+      - ./production.env
     ports:
       - "8000:8000"
     volumes:
@@ -70,12 +72,9 @@ services:
     environment:
       - CONFIG_PATH=/app/config.json
       - ML_PREDICTION_URL=http://ml:8001/predict
-      - DATABASE_URL=mysql+pymysql://golitransit:golitransit_pass@mysql:3306/golitransit
       - PYTHONUNBUFFERED=1
     depends_on:
       ml:
-        condition: service_healthy
-      mysql:
         condition: service_healthy
     networks:
       - golitransit-net
@@ -113,8 +112,6 @@ services:
       start_period: 20s
       retries: 3
     command: python predict.py
-
-
 
   # ─── React Frontend (Vite dev server) ───────────────────────
   frontend:
