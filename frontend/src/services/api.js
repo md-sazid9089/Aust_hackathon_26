@@ -16,9 +16,9 @@
 import axios from 'axios';
 
 // ─── Base URL ───────────────────────────────────────────────────
-// In dev: Vite proxy handles /api → http://localhost:8000
-// In prod: set VITE_API_BASE_URL to the deployed backend URL
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// In dev: Use relative paths, Vite proxy handles routing to backend
+// In prod: May need adjustment for deployed backend URL
+const BASE_URL = '/api';
 
 // ─── Axios Instance ─────────────────────────────────────────────
 
