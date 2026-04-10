@@ -16,6 +16,7 @@ import { getGraphSnapshot, reportAnomaly, getAnomalies, clearAnomalies } from '.
 function MapPage({ apiStatus }) {
   const [origin, setOrigin] = useState(null);
   const [destination, setDestination] = useState(null);
+  const [routeMode, setRouteMode] = useState('single');
   const [modes, setModes] = useState(['car']);
   const [routeResult, setRouteResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -178,6 +179,8 @@ function MapPage({ apiStatus }) {
     }
   };
 
+  const buildMultimodalModes = () => ['walk', 'transit', 'car', 'bike', 'rickshaw'];
+
   const handleComputeRoute = async (includeMultimodal = false) => {
     if (!origin || !destination) {
       setError('Please set both origin and destination by clicking the map.');
@@ -187,10 +190,11 @@ function MapPage({ apiStatus }) {
     setError(null);
     try {
       setLastRouteOptions({ includeMultimodal });
+      const requestModes = includeMultimodal ? buildMultimodalModes() : [modes?.[0] || 'car'];
       const result = await computeRoute({
         origin,
         destination,
-        modes: [modes?.[0] || 'car'],
+        modes: requestModes,
         optimize: 'time',
         avoid_anomalies: true,
         include_multimodal: includeMultimodal,
@@ -247,7 +251,7 @@ function MapPage({ apiStatus }) {
       setAnomalies(Array.isArray(data?.anomalies) ? data.anomalies : []);
 
       if (origin && destination) {
-        await handleComputeRoute(Boolean(lastRouteOptions.includeMultimodal));
+        await handleComputeRoute(routeMode === 'multimodal');
       }
     } catch (err) {
       setError(err.message || 'Failed to apply anomaly');
@@ -264,7 +268,7 @@ function MapPage({ apiStatus }) {
       setSelectedBBox(null);
       setBboxStart(null);
       if (origin && destination) {
-        await handleComputeRoute(Boolean(lastRouteOptions.includeMultimodal));
+        await handleComputeRoute(routeMode === 'multimodal');
       }
     } catch (err) {
       setError(err.message || 'Failed to clear anomalies');
@@ -296,6 +300,13 @@ function MapPage({ apiStatus }) {
     setError(null);
   };
 
+  const handleRouteModeChange = (nextMode) => {
+    setRouteMode(nextMode);
+    setLastRouteOptions({ includeMultimodal: nextMode === 'multimodal' });
+    setRouteResult(null);
+    setError(null);
+  };
+
   return (
     <div style={{
       position: 'fixed',
@@ -310,6 +321,7 @@ function MapPage({ apiStatus }) {
           origin={origin}
           destination={destination}
           routeResult={routeResult}
+          routeMode={routeMode}
           selectedMode={modes?.[0] || 'car'}
           graphNodes={graphNodes}
           graphEdges={graphEdges}
@@ -359,7 +371,12 @@ function MapPage({ apiStatus }) {
           border: '1px solid rgba(255,255,255,0.06)',
           boxShadow: '0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03)',
         }}>
-          <ModeSelector selectedModes={modes} onChange={setModes} />
+          <ModeSelector
+            selectedModes={modes}
+            onChange={setModes}
+            routeMode={routeMode}
+            onRouteModeChange={handleRouteModeChange}
+          />
         </div>
 
         {/* Route Planner Card */}
@@ -376,10 +393,12 @@ function MapPage({ apiStatus }) {
             origin={origin}
             destination={destination}
             routeResult={routeResult}
+            routeMode={routeMode}
             isLoading={isLoading}
             error={error}
-            onCompute={() => handleComputeRoute(false)}
+            onCompute={() => handleComputeRoute(routeMode === 'multimodal')}
             onComputeMultimodal={() => handleComputeRoute(true)}
+            onRouteModeChange={handleRouteModeChange}
             onClear={handleClear}
           />
         </div>
