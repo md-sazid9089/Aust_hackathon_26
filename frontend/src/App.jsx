@@ -28,11 +28,11 @@ function App() {
 
   /* ── Status indicator helpers ── */
   const statusDot =
-    apiStatus?.status === 'healthy'  ? { bg: '#22c55e', shadow: 'rgba(34,197,94,0.6)'  } :
+    (apiStatus?.status === 'healthy' || apiStatus?.status === 'ok')  ? { bg: '#22c55e', shadow: 'rgba(34,197,94,0.6)'  } :
     apiStatus?.status === 'degraded' ? { bg: '#f59e0b', shadow: 'rgba(245,158,11,0.6)' } :
                                        { bg: '#ef4444', shadow: 'none' };
   const statusLabel =
-    apiStatus?.status === 'healthy'  ? 'Engine Online' :
+    (apiStatus?.status === 'healthy' || apiStatus?.status === 'ok')  ? 'Engine Online' :
     apiStatus?.status === 'degraded' ? 'Degraded' :
                                        'Offline';
 
