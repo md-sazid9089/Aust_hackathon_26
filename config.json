@@ -32,6 +32,12 @@
       "fuel_cost_per_km": 0.0,
       "co2_grams_per_km": 0
     },
+    "rickshaw": {
+      "default_speed_kmh": 25,
+      "allowed_road_types": ["residential", "tertiary", "secondary", "unclassified", "service"],
+      "fuel_cost_per_km": 0.03,
+      "co2_grams_per_km": 50
+    },
     "transit": {
       "default_speed_kmh": 30,
       "allowed_road_types": ["primary", "secondary", "tertiary", "trunk"],
@@ -43,12 +49,17 @@
   "mode_switch_penalties": {
     "car_to_walk": { "time_seconds": 120, "cost_units": 0.5 },
     "car_to_transit": { "time_seconds": 300, "cost_units": 1.0 },
+    "car_to_rickshaw": { "time_seconds": 180, "cost_units": 0.6 },
+    "car_to_bike": { "time_seconds": 90, "cost_units": 0.3 },
     "walk_to_transit": { "time_seconds": 60, "cost_units": 0.2 },
+    "walk_to_rickshaw": { "time_seconds": 120, "cost_units": 0.4 },
     "bike_to_transit": { "time_seconds": 180, "cost_units": 0.8 },
+    "bike_to_walk": { "time_seconds": 60, "cost_units": 0.1 },
     "transit_to_walk": { "time_seconds": 60, "cost_units": 0.2 },
     "transit_to_car": { "time_seconds": 300, "cost_units": 1.0 },
-    "walk_to_bike": { "time_seconds": 90, "cost_units": 0.3 },
-    "bike_to_walk": { "time_seconds": 60, "cost_units": 0.1 }
+    "transit_to_rickshaw": { "time_seconds": 90, "cost_units": 0.3 },
+    "rickshaw_to_walk": { "time_seconds": 90, "cost_units": 0.2 },
+    "rickshaw_to_transit": { "time_seconds": 120, "cost_units": 0.4 }
   },
 
   "anomaly": {
