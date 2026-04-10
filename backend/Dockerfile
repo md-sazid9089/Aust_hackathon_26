@@ -47,8 +47,8 @@ WORKDIR /app
 
 # Install minimal runtime system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgdal32 \
-    libspatialindex6 \
+    libgdal-dev \
+    libspatialindex-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
