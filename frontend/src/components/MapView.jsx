@@ -19,7 +19,7 @@
  */
 
 import { createPortal } from 'react-dom';
-import { MapContainer, TileLayer, Marker, Polyline, useMapEvents, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMapEvents, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
 // ─── Custom marker icons ──────────────────────────────────────────
@@ -144,9 +144,9 @@ function MapFABControls({ defaultCenter, defaultZoom }) {
 
 // ─── Main MapView Component ───────────────────────────────────────
 
-function MapView({ origin, destination, routeResult, onMapClick }) {
-  // Default center: Dhaka, near Ahsanullah University of Science and Technology
-  const defaultCenter = [23.7391, 90.3703];
+function MapView({ origin, destination, routeResult, graphNodes, onMapClick }) {
+  // Default center: Ahsanullah University of Science and Technology area
+  const defaultCenter = [23.7639, 90.4066];
   const defaultZoom = 14;
 
   // Extract route geometry from all legs
@@ -154,12 +154,15 @@ function MapView({ origin, destination, routeResult, onMapClick }) {
     leg.geometry?.map((point) => [point.lat, point.lng]) || []
   ) || [];
 
+  const nodeCoords = (graphNodes || []).map((node) => [node.lat, node.lng]);
+
   return (
     <MapContainer
       center={defaultCenter}
       zoom={defaultZoom}
       style={{ width: '100%', height: '100%' }}
       zoomControl={false}
+      preferCanvas={true}
     >
       {/* ─── Base tile layer ──────────────────────────────── */}
       <TileLayer
@@ -209,6 +212,21 @@ function MapView({ origin, destination, routeResult, onMapClick }) {
           }}
         />
       )}
+
+      {/* ─── Graph node dots (all road junction nodes) ───── */}
+      {nodeCoords.map((position, idx) => (
+        <CircleMarker
+          key={`graph-node-${idx}`}
+          center={position}
+          radius={1.8}
+          pathOptions={{
+            color: '#60a5fa',
+            weight: 0,
+            fillColor: '#60a5fa',
+            fillOpacity: 0.8,
+          }}
+        />
+      ))}
     </MapContainer>
   );
 }
