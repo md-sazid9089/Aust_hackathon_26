@@ -102,7 +102,10 @@ class RoutingEngine:
                     for e in leg.traffic_edges
                 ]
             )
-        traffic_prediction = traffic_jam_service.predict_route_jam(all_traffic_edges)
+        traffic_prediction = traffic_jam_service.predict_route_jam(
+            all_traffic_edges,
+            hour_of_day=request.traffic_hour_of_day,
+        )
 
         return RouteResponse(
             legs=[
