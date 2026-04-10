@@ -26,10 +26,11 @@ jobs:
           pip install -r backend/requirements.txt
 
       - name: Run backend tests
+        working-directory: backend
         env:
-          CONFIG_PATH: backend/../config.json
+          CONFIG_PATH: ../config.json
           DATABASE_URL: sqlite+pysqlite:///:memory:
-        run: pytest backend/tests -q
+        run: python -m pytest tests -v
 
   frontend-build:
     name: Frontend build
