@@ -42,6 +42,19 @@ class Settings:
     backend_port: int = _raw.get("server", {}).get("backend_port", 8000)
     cors_origins: list[str] = field(default_factory=lambda: _raw.get("server", {}).get("cors_origins", ["*"]))
 
+    # Database
+    db_driver: str = _raw.get("database", {}).get("driver", "mysql+pymysql")
+    db_user: str = _raw.get("database", {}).get("user", "golitransit")
+    db_password: str = _raw.get("database", {}).get("password", "golitransit")
+    db_host: str = _raw.get("database", {}).get("host", "localhost")
+    db_port: int = _raw.get("database", {}).get("port", 3306)
+    db_name: str = _raw.get("database", {}).get("database", "golitransit")
+
+    # JWT
+    jwt_secret_key: str = _raw.get("jwt", {}).get("secret_key", "your-secret-key-change-in-production")
+    jwt_algorithm: str = _raw.get("jwt", {}).get("algorithm", "HS256")
+    jwt_access_token_expire_minutes: int = _raw.get("jwt", {}).get("access_token_expire_minutes", 30)
+
     # Graph
     osm_location: str = _raw.get("graph", {}).get("default_location", "San Francisco, California, USA")
     network_type: str = _raw.get("graph", {}).get("network_type", "all")

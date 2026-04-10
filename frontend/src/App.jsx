@@ -15,14 +15,29 @@ import HomePage from './pages/HomePage';
 import MapPage from './pages/MapPage';
 import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
-import { checkHealth } from './services/api';
+import { checkHealth, initializeAuth } from './services/api';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'map' | 'login' | 'signup'
   const [apiStatus, setApiStatus] = useState(null);       // health check result
+  const [user, setUser] = useState(null);                 // current logged-in user
 
-  // Check backend health on mount
+  // Initialize auth and check backend health on mount
   useEffect(() => {
+    // Initialize auth token from localStorage if available
+    initializeAuth();
+    
+    // Load user from localStorage if available
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error('Failed to parse saved user:', e);
+      }
+    }
+    
+    // Check backend health
     checkHealth()
       .then(setApiStatus)
       .catch(() => setApiStatus({ status: 'offline' }));

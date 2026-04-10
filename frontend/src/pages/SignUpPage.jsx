@@ -7,6 +7,7 @@
 
 import { useState } from 'react';
 import { Eye, EyeOff, Loader2, AlertCircle, Check, ChevronLeft } from 'lucide-react';
+import { registerUser, setAuthToken } from '../services/api';
 
 export default function SignUpPage({ onNavigateToHome, onNavigateToLogin }) {
   const [formData, setFormData] = useState({
@@ -88,12 +89,18 @@ export default function SignUpPage({ onNavigateToHome, onNavigateToLogin }) {
 
     setIsLoading(true);
     try {
-      // TODO: Replace with actual API call
-      // const response = await registerUser(formData);
+      const response = await registerUser(formData);
       
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      console.log('Sign up successful:', formData);
-      // Redirect to login or dashboard
+      // Save token and user info
+      setAuthToken(response.access_token);
+      localStorage.setItem('user', JSON.stringify(response.user));
+      
+      console.log('Sign up successful:', response.user);
+      
+      // Navigate to home page (you can redirect to map instead)
+      if (onNavigateToHome) {
+        onNavigateToHome();
+      }
     } catch (error) {
       setApiError(error.message || 'Sign up failed. Please try again.');
     } finally {

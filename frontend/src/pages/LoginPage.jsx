@@ -17,6 +17,7 @@
 
 import { useState } from 'react';
 import { Eye, EyeOff, Loader2, AlertCircle, ChevronLeft } from 'lucide-react';
+import { loginUser, setAuthToken } from '../services/api';
 
 export default function LoginPage({ onNavigateToHome, onNavigateToSignUp }) {
   const [email, setEmail] = useState('');
@@ -63,17 +64,18 @@ export default function LoginPage({ onNavigateToHome, onNavigateToSignUp }) {
 
     setIsLoading(true);
     try {
-      // TODO: Replace with actual API call
-      // const response = await loginUser({ email, password });
+      const response = await loginUser({ email, password });
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Save token and user info
+      setAuthToken(response.access_token);
+      localStorage.setItem('user', JSON.stringify(response.user));
       
-      // Success - redirect or update auth state
-      console.log('Login successful:', { email, password });
+      console.log('Login successful:', response.user);
       
-      // Example: localStorage.setItem('token', response.token);
-      // Example: navigate('/map');
+      // Navigate to home page (you can redirect to map instead)
+      if (onNavigateToHome) {
+        onNavigateToHome();
+      }
     } catch (error) {
       setApiError(error.message || 'Login failed. Please try again.');
     } finally {
