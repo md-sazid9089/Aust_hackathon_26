@@ -46,12 +46,14 @@ function App() {
       {/* ══════════════════════════════════════════════════
           NAVBAR — floating pill bar, z-index 100
           On the map page this floats above the full-screen map.
+          Hidden on login and signup pages
       ══════════════════════════════════════════════════ */}
       <header style={{
         position: 'fixed', top: 0, left: 0, right: 0,
         zIndex: 100,
         padding: '10px 20px',
-        display: 'flex', justifyContent: 'center',
+        display: (currentPage === 'login' || currentPage === 'signup') ? 'none' : 'flex',
+        justifyContent: 'center',
         pointerEvents: 'none',           /* let clicks pass through padding area */
       }}>
         <div style={{
@@ -129,64 +131,6 @@ function App() {
             Route Map
           </button>
 
-          {/* Login Button */}
-          <button
-            id="nav-login"
-            onClick={() => setCurrentPage('login')}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 999, fontSize: 13, fontWeight: 500,
-              border: '1px solid rgba(168,85,247,0.30)',
-              cursor: 'pointer',
-              background: currentPage === 'login' ? 'rgba(168,85,247,0.15)' : 'transparent',
-              color: currentPage === 'login' ? '#c4b5fd' : '#a78bfa',
-              transition: 'all 0.18s ease',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'rgba(168,85,247,0.15)';
-              e.currentTarget.style.borderColor = 'rgba(168,85,247,0.50)';
-              e.currentTarget.style.color = '#c4b5fd';
-            }}
-            onMouseLeave={e => {
-              if (currentPage !== 'login') {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.borderColor = 'rgba(168,85,247,0.30)';
-                e.currentTarget.style.color = '#a78bfa';
-              }
-            }}
-          >
-            Sign In
-          </button>
-
-          {/* Sign Up Button */}
-          <button
-            id="nav-signup"
-            onClick={() => setCurrentPage('signup')}
-            style={{
-              padding: '7px 18px',
-              borderRadius: 999, fontSize: 13, fontWeight: 600,
-              border: 'none', cursor: 'pointer',
-              background: 'linear-gradient(135deg, rgba(168,85,247,0.25), rgba(99,102,241,0.25))',
-              color: '#c4b5fd',
-              boxShadow: '0 2px 8px rgba(168,85,247,0.20)',
-              transition: 'all 0.18s ease',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(168,85,247,0.35), rgba(99,102,241,0.35))';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(168,85,247,0.35)';
-              e.currentTarget.style.transform = 'scale(1.02)';
-            }}
-            onMouseLeave={e => {
-              if (currentPage !== 'signup') {
-                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(168,85,247,0.25), rgba(99,102,241,0.25))';
-                e.currentTarget.style.boxShadow = '0 2px 8px rgba(168,85,247,0.20)';
-                e.currentTarget.style.transform = 'scale(1)';
-              }
-            }}
-          >
-            Sign Up
-          </button>
-
           {/* Launch CTA — green */}
           <button
             onClick={() => setCurrentPage('map')}
@@ -236,6 +180,35 @@ function App() {
               {statusLabel}
             </span>
           </div>
+
+          {/* Get Started Button */}
+          <button
+            id="nav-get-started"
+            onClick={() => setCurrentPage('login')}
+            style={{
+              padding: '7px 18px',
+              borderRadius: 999, fontSize: 13, fontWeight: 600,
+              border: 'none', cursor: 'pointer',
+              background: 'linear-gradient(135deg, rgba(168,85,247,0.30), rgba(99,102,241,0.30))',
+              color: '#c4b5fd',
+              boxShadow: '0 2px 8px rgba(168,85,247,0.20)',
+              transition: 'all 0.18s ease',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(168,85,247,0.40), rgba(99,102,241,0.40))';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(168,85,247,0.35)';
+              e.currentTarget.style.transform = 'scale(1.02)';
+            }}
+            onMouseLeave={e => {
+              if (currentPage !== 'login' && currentPage !== 'signup') {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(168,85,247,0.30), rgba(99,102,241,0.30))';
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(168,85,247,0.20)';
+                e.currentTarget.style.transform = 'scale(1)';
+              }
+            }}
+          >
+            Get Started
+          </button>
         </div>
       </header>
 
@@ -251,7 +224,7 @@ function App() {
         {currentPage === 'home' ? (
           <HomePage onNavigateToMap={() => setCurrentPage('map')} apiStatus={apiStatus} />
         ) : currentPage === 'login' ? (
-          <LoginPage onNavigateToHome={() => setCurrentPage('home')} />
+          <LoginPage onNavigateToHome={() => setCurrentPage('home')} onNavigateToSignUp={() => setCurrentPage('signup')} />
         ) : currentPage === 'signup' ? (
           <SignUpPage onNavigateToHome={() => setCurrentPage('home')} onNavigateToLogin={() => setCurrentPage('login')} />
         ) : (
