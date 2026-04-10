@@ -119,13 +119,13 @@ GoliTransit/
 
 ## 🚦 Key Features
 
-| Feature | Description |
-|---|---|
-| **Single-Modal Routing** | Shortest/fastest path for one transport mode (car, bike, walk, transit) |
-| **Multi-Modal Routing** | Combine modes with configurable switch penalties |
-| **Real-Time Anomalies** | Ingest accidents, closures, weather — dynamically reroute |
-| **ML Congestion Prediction** | Predict edge traversal times using historical + live data |
-| **Graph Snapshots** | Export current graph state for debugging / visualization |
+| Feature                      | Description                                                             |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| **Single-Modal Routing**     | Shortest/fastest path for one transport mode (car, bike, walk, transit) |
+| **Multi-Modal Routing**      | Combine modes with configurable switch penalties                        |
+| **Real-Time Anomalies**      | Ingest accidents, closures, weather — dynamically reroute               |
+| **ML Congestion Prediction** | Predict edge traversal times using historical + live data               |
+| **Graph Snapshots**          | Export current graph state for debugging / visualization                |
 
 ---
 
@@ -153,6 +153,7 @@ npm run dev
 ## 🔧 Configuration
 
 See `config.json` for:
+
 - Vehicle type definitions (speed, allowed road types)
 - Mode-switch penalties (time + cost)
 - Anomaly severity thresholds
@@ -172,3 +173,50 @@ See `config.json` for:
 ## 📄 License
 
 MIT — Built for hackathon demonstration purposes.
+
+---
+
+## 🔁 CI/CD (GitHub Actions)
+
+This repository now includes two workflows:
+
+- `.github/workflows/ci.yml`
+  - Runs on push to `dev`, and on every pull request.
+  - Executes backend tests (`pytest backend/tests -q`).
+  - Builds the frontend (`npm run build`).
+  - Validates Docker Compose (`docker compose config`).
+
+- `.github/workflows/cd.yml`
+  - Runs on push to `dev`, on pull requests targeting `dev`, and manual trigger.
+  - Builds and pushes Docker images to GHCR:
+    - `ghcr.io/<owner>/aust-hackathon-26-backend`
+    - `ghcr.io/<owner>/aust-hackathon-26-ml`
+    - `ghcr.io/<owner>/aust-hackathon-26-frontend`
+  - Builds and deploys the frontend to Vercel production on `dev`.
+  - Creates Vercel preview deployments for pull requests.
+
+### Required repository setup
+
+1. Add repository variable:
+   - `VITE_API_BASE_URL` = your production API URL (example: `https://api.example.com`).
+2. Add repository secrets (from your Vercel project settings):
+   - `VERCEL_TOKEN`
+   - `VERCEL_ORG_ID`
+   - `VERCEL_PROJECT_ID`
+3. Ensure workflow permissions allow writing packages (already set in workflow file).
+
+### Notes
+
+---
+
+## 🌐 Production Frontend Deploy
+
+The live frontend is deployed at:
+
+👉 **[https://aust-hackathon-26.vercel.app/](https://aust-hackathon-26.vercel.app/)**
+
+---
+
+### Vercel Token Usage
+
+- The `VERCEL_TOKEN` secret is required for deploys and must be stored as a GitHub Actions secret. **Never expose this token in logs or outputs.**

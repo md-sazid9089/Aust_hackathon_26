@@ -38,10 +38,10 @@ services:
     container_name: golitransit-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: golitransit
-      MYSQL_USER: golitransit
-      MYSQL_PASSWORD: golitransit_pass
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-golitransit}
+      MYSQL_USER: ${DB_USER:-golitransit}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-golitransit_pass}
     ports:
       - "3306:3306"
     volumes:
@@ -70,7 +70,7 @@ services:
     environment:
       - CONFIG_PATH=/app/config.json
       - ML_PREDICTION_URL=http://ml:8001/predict
-      - DATABASE_URL=mysql+pymysql://golitransit:golitransit_pass@mysql:3306/golitransit
+      - DATABASE_URL=${DATABASE_URL:-mysql+pymysql://${DB_USER:-golitransit}:${DB_PASSWORD:-golitransit_pass}@${DOCKER_DB_HOST:-mysql}:${DB_PORT:-3306}/${DB_NAME:-golitransit}}
       - PYTHONUNBUFFERED=1
     depends_on:
       ml:
