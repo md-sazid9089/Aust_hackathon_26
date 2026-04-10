@@ -111,9 +111,6 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
 
-        - name: Add production deploy URL to job summary
-          run: echo "Production frontend: https://aust-hackathon-26.vercel.app/" >> "$GITHUB_STEP_SUMMARY"
-
   deploy-frontend-preview:
     name: Deploy frontend preview to Vercel
     runs-on: ubuntu-latest

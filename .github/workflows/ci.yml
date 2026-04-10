@@ -57,9 +57,6 @@ jobs:
           VITE_BASE_PATH: /
         run: npm run build
 
-        - name: Add production deploy URL to job summary
-          run: echo "Production frontend: https://aust-hackathon-26.vercel.app/" >> "$GITHUB_STEP_SUMMARY"
-
   docker-validate:
     name: Docker compose validation
     runs-on: ubuntu-latest
