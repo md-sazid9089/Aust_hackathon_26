@@ -42,6 +42,7 @@ class AnomalyService:
         )
         self._applied_edge_effects: dict[str, dict] = {}
         self._edge_resolve_cache: dict[str, tuple | None] = {}
+        self._edge_resolve_cache_max = 4096
 
     # ─── Ingest ──────────────────────────────────────────────────
 
@@ -683,9 +684,13 @@ class AnomalyService:
             for target in target_candidates:
                 if graph.has_edge(source, target):
                     self._edge_resolve_cache[edge_id] = (source, target)
+                    if len(self._edge_resolve_cache) > self._edge_resolve_cache_max:
+                        self._edge_resolve_cache.pop(next(iter(self._edge_resolve_cache)))
                     return source, target
 
         self._edge_resolve_cache[edge_id] = None
+        if len(self._edge_resolve_cache) > self._edge_resolve_cache_max:
+            self._edge_resolve_cache.pop(next(iter(self._edge_resolve_cache)))
         return None
 
     def _candidate_node_ids(self, graph, token: str):

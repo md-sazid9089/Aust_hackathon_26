@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException
 
 from models.anomaly_models import AnomalyReport, AnomalyListResponse
 from services.anomaly_service import anomaly_service
+from services.graph_service import graph_service
 
 router = APIRouter()
 
@@ -39,6 +40,21 @@ async def report_anomaly(report: AnomalyReport):
       3. If severity >= reroute_on_severity, flag for dynamic rerouting
     """
     try:
+        needs_graph_resolution = bool(
+            (report.target is not None and report.target.type == "bbox")
+            or (
+                report.location is not None
+                and report.location.lat is not None
+                and report.location.lng is not None
+            )
+            or (
+                report.location is not None
+                and str(report.location.edge_id or "") == "*"
+            )
+        )
+        if needs_graph_resolution:
+            graph_service.ensure_loaded(raise_on_error=False)
+
         anomaly_id = await anomaly_service.ingest(report)
         active = await anomaly_service.get_active()
         created = next((a for a in active if a.anomaly_id == anomaly_id), None)

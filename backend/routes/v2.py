@@ -30,6 +30,13 @@ from config import settings
 router = APIRouter()
 
 
+def _require_graph_loaded():
+    graph = graph_service.ensure_loaded(raise_on_error=False)
+    if graph is None or graph.number_of_nodes() == 0:
+        raise HTTPException(status_code=503, detail="Graph unavailable")
+    return graph
+
+
 # ─── Request/Response Models ─────────────────────────────────────
 
 
@@ -91,12 +98,7 @@ def route_v2(request: RouteV2Request):
     Returns the optimal path with node IDs, coordinate path,
     road-following geometry, total cost, and computation time.
     """
-    if not graph_service.is_loaded():
-        raise HTTPException(status_code=503, detail="Graph not loaded yet")
-
-    graph = graph_service.get_graph()
-    if graph is None:
-        raise HTTPException(status_code=503, detail="Graph unavailable")
+    graph = _require_graph_loaded()
 
     start_time = datetime.now(timezone.utc)
 
@@ -145,12 +147,7 @@ def route_v2_coords(request: RouteV2FromCoordsRequest):
     Reports snap distances so callers can assess accuracy.
     Falls back to edge-snapping if the nearest node is far.
     """
-    if not graph_service.is_loaded():
-        raise HTTPException(status_code=503, detail="Graph not loaded yet")
-
-    graph = graph_service.get_graph()
-    if graph is None:
-        raise HTTPException(status_code=503, detail="Graph unavailable")
+    graph = _require_graph_loaded()
 
     # Resolve coordinates to nearest nodes (with distance check)
     source_node, source_dist = graph_service.get_nearest_node_with_distance(
@@ -240,12 +237,7 @@ def anomaly_v2(req: AnomalyV2Request):
       ✔ Modify only weights dynamically (not structure)
       ✔ High severity blocks cars
     """
-    if not graph_service.is_loaded():
-        raise HTTPException(status_code=503, detail="Graph not loaded yet")
-
-    graph = graph_service.get_graph()
-    if graph is None:
-        raise HTTPException(status_code=503, detail="Graph unavailable")
+    graph = _require_graph_loaded()
 
     updated_count = 0
     blocked_car_count = 0
@@ -305,12 +297,7 @@ def snapshot_v2(
     include_weights: bool = False,
 ):
     """Return a snapshot of the current road graph for debugging."""
-    if not graph_service.is_loaded():
-        raise HTTPException(status_code=503, detail="Graph not loaded yet")
-
-    graph = graph_service.get_graph()
-    if graph is None:
-        raise HTTPException(status_code=503, detail="Graph unavailable")
+    graph = _require_graph_loaded()
 
     nodes = list(graph.nodes())[:limit]
 
@@ -364,12 +351,7 @@ def validate_graph():
       ✔ Every path follows adjacency (no direct jumps)
       ✔ Graph is connected (largest component only)
     """
-    if not graph_service.is_loaded():
-        raise HTTPException(status_code=503, detail="Graph not loaded yet")
-
-    graph = graph_service.get_graph()
-    if graph is None:
-        raise HTTPException(status_code=503, detail="Graph unavailable")
+    graph = _require_graph_loaded()
 
     issues = []
     stats = {

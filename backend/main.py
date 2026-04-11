@@ -11,7 +11,6 @@ All business logic lives in the `services/` layer — routes are thin
 wrappers that validate input, delegate to services, and return responses.
 """
 
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -22,12 +21,8 @@ from database import engine, Base
 from models import user_models, traffic_models  # noqa: F401
 from routes import health, auth, route, anomaly, graph, traffic
 from routes.v2 import router as v2_router
-from services.graph_service import graph_service
+from services.ml_integration import ml_integration
 from services.traffic_jam_service import traffic_jam_service
-
-# When TESTING=1 (or "true") is set, skip heavy startup work (OSM graph load,
-# ML model training) so the test suite runs fast and without network access.
-_TESTING = os.environ.get("TESTING", "").lower() in ("1", "true", "yes")
 
 
 # ─── Lifespan: load the road graph once at startup ───────────────
@@ -36,33 +31,19 @@ async def lifespan(app: FastAPI):
     """
     On startup:
       - Create database tables if they don't exist
-      - Load the OSM road graph into memory (skipped when TESTING=1)
+      - Skip graph/model preloading to keep boot memory low
     On shutdown: clean up resources.
     """
     print("[startup] Creating database tables...")
     Base.metadata.create_all(bind=engine)
     print("[startup] Database tables created/verified")
 
-    if _TESTING:
-        # Test-mode bypass: skip OSM graph loading and ML initialization to
-        # avoid real network calls and keep tests fast and deterministic.
-        print("[startup] TESTING mode — skipping graph load and ML initialization")
-    else:
-        print("[startup] Loading road graph...")
-        graph_service.load_graph()
-        print(
-            f"[startup] Graph loaded — {graph_service.node_count()} nodes, {graph_service.edge_count()} edges"
-        )
-
-        print("[startup] Building dummy traffic dataset and training jam model...")
-        traffic_jam_service.initialize_from_graph(graph_service.get_graph())
-        print("[startup] Traffic jam model ready")
-        await traffic_jam_service.start_workers()
-        print("[startup] Traffic workers started")
+    print("[startup] Lazy runtime enabled - graph and traffic model load on demand")
 
     yield
     print("[shutdown] Cleaning up resources...")
     await traffic_jam_service.stop_workers()
+    await ml_integration.close()
 
 
 # ─── App Initialization ──────────────────────────────────────────

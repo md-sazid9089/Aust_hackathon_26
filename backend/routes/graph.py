@@ -23,6 +23,8 @@ async def get_graph_snapshot(
     include_edges: bool = Query(False, description="Include full edge list (can be large)"),
     bbox: str = Query(None, description="Bounding box filter: 'south,west,north,east'"),
     mode: str = Query(None, description="Filter nodes by transport mode accessibility (car, bike, walk, transit, rickshaw)"),
+    max_nodes: int = Query(800, ge=1, le=5000, description="Maximum nodes to include in response"),
+    max_edges: int = Query(1200, ge=1, le=10000, description="Maximum edges to include when include_edges=true"),
 ):
     """
     Return a snapshot of the current road graph.
@@ -39,6 +41,8 @@ async def get_graph_snapshot(
       - anomaly_affected_edges: edges with modified weights due to active anomalies
     """
     bbox_tuple = None
+    graph_service.ensure_loaded(raise_on_error=False)
+
     if bbox:
         try:
             parts = [float(x.strip()) for x in bbox.split(",")]
@@ -51,6 +55,8 @@ async def get_graph_snapshot(
     snapshot = graph_service.get_snapshot(
         include_edges=include_edges,
         bbox=bbox_tuple,
-        mode_filter=mode
+        mode_filter=mode,
+        max_nodes=max_nodes,
+        max_edges=max_edges,
     )
     return snapshot

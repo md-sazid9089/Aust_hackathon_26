@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import os
 import time
+from heapq import heappop, heappush
 from collections import OrderedDict
 from typing import Callable
 
@@ -64,15 +65,33 @@ class RoutingEngine:
         self._max_alts = settings.max_alternatives
         self._max_transfers = settings.multimodal_max_transfers
         self._transfer_radius = settings.transfer_radius_meters
-        self._shortest_tree_cache: OrderedDict[tuple, tuple[dict, dict, float]] = (
+        self._shortest_tree_cache: OrderedDict[tuple, tuple[dict, float]] = (
             OrderedDict()
         )
-        self._shortest_tree_cache_max = 256
+        self._shortest_tree_cache_max = max(
+            4,
+            int(os.getenv("ROUTING_TREE_CACHE_MAX", "24")),
+        )
+        self._shortest_tree_cache_ttl_s = max(
+            5.0,
+            float(os.getenv("ROUTING_TREE_CACHE_TTL_S", "20")),
+        )
         self._route_response_cache: OrderedDict[tuple, tuple[RouteResponse, float]] = (
             OrderedDict()
         )
-        self._route_response_cache_max = 512
-        self._route_response_ttl_s = 60.0
+        self._route_response_cache_max = max(
+            8,
+            int(os.getenv("ROUTING_RESPONSE_CACHE_MAX", "64")),
+        )
+        self._route_response_ttl_s = max(
+            5.0,
+            float(os.getenv("ROUTING_RESPONSE_CACHE_TTL_S", "20")),
+        )
+        self._ml_refresh_interval_s = max(
+            0.0,
+            float(os.getenv("ROUTING_ML_REFRESH_INTERVAL_S", "30")),
+        )
+        self._last_ml_refresh_monotonic = 0.0
 
     def _normalize_mode(self, mode: str) -> str:
         if mode == "bus":
@@ -143,104 +162,206 @@ class RoutingEngine:
         origin_node,
         mode: str,
         optimize: str,
+        undirected: bool,
     ) -> tuple:
         return (
             self._current_graph_version(),
             id(graph),
-            bool(graph.is_directed()),
+            bool(undirected),
             mode,
             optimize,
             origin_node,
         )
 
-    def _get_shortest_path_tree(
+    def _edge_cost_for_mode(self, edge_data: dict, mode: str, optimize: str):
+        mode_allowed = bool(edge_data.get(f"{mode}_allowed", False))
+        if mode == "walk":
+            mode_allowed = bool(
+                edge_data.get(
+                    "walk_allowed",
+                    edge_data.get(
+                        "walking_allowed", edge_data.get("pedestrian_allowed", False)
+                    ),
+                )
+            )
+        if not mode_allowed:
+            return None
+
+        length = float(edge_data.get("length") or 0.0)
+        travel_time = float(
+            edge_data.get(f"{mode}_travel_time") or edge_data.get("travel_time") or 0.0
+        )
+        cost_per_km = float(settings.vehicle_types[mode].get("fuel_cost_per_km", 0.0) or 0.0)
+        monetary_cost = (length / 1000.0) * cost_per_km
+
+        if optimize == "distance":
+            return max(length, 0.01)
+        if optimize == "cost":
+            return max(monetary_cost, 0.0001)
+        return max(travel_time, 0.01)
+
+    def _resolve_step_edge_data(
+        self,
+        graph: nx.MultiDiGraph,
+        u,
+        v,
+        key,
+        *,
+        undirected: bool,
+    ) -> tuple[dict | None, bool]:
+        direct = graph.get_edge_data(u, v, key=key, default=None)
+        if direct is not None:
+            return direct, False
+
+        if not undirected:
+            return None, False
+
+        reverse = graph.get_edge_data(v, u, key=key, default=None)
+        if reverse is not None:
+            return reverse, True
+
+        return None, False
+
+    def _iter_neighbor_edges(
+        self,
+        graph: nx.MultiDiGraph,
+        node_id,
+        *,
+        undirected: bool,
+    ):
+        indexed_neighbors = graph_service.get_outgoing_edges(
+            node_id,
+            undirected=undirected,
+        )
+        if indexed_neighbors:
+            return indexed_neighbors
+
+        neighbors: list[tuple[object, object]] = []
+
+        adjacency = getattr(graph, "adj", {})
+        for neighbor_id, edge_dict in adjacency.get(node_id, {}).items():
+            for edge_key in edge_dict.keys():
+                neighbors.append((neighbor_id, edge_key))
+
+        if undirected:
+            predecessors = getattr(graph, "pred", {})
+            for neighbor_id, edge_dict in predecessors.get(node_id, {}).items():
+                for edge_key in edge_dict.keys():
+                    neighbors.append((neighbor_id, edge_key))
+
+        if not neighbors:
+            return ()
+
+        return tuple(dict.fromkeys(neighbors))
+
+    def _reconstruct_path(self, previous: dict, destination) -> list:
+        path = [destination]
+        current = destination
+        while current in previous:
+            current = previous[current]
+            path.append(current)
+        path.reverse()
+        return path
+
+    def _dijkstra_path_to_targets(
         self,
         graph: nx.MultiDiGraph,
         origin_node,
+        destination_candidates: list,
         mode: str,
         optimize: str,
-    ) -> tuple[dict, dict] | tuple[None, None]:
-        started_at = time.perf_counter()
-        key = self._tree_cache_key(graph, origin_node, mode, optimize)
-        cached = self._shortest_tree_cache.get(key)
-        if cached is not None:
-            lengths, paths, _ts = cached
-            self._shortest_tree_cache.move_to_end(key)
-            try:
-                edges_processed = sum(int(graph.out_degree(node)) for node in lengths)
-            except Exception:
-                edges_processed = -1
-            _profile_log(
-                "shortest_tree_cache_hit",
-                mode=mode,
-                optimize=optimize,
-                origin_node=origin_node,
-                nodes_visited=len(lengths),
-                edges_processed=edges_processed,
-                runtime_ms=(time.perf_counter() - started_at) * 1000.0,
-            )
-            return lengths, paths
-
-        weight_fn = self._build_weight_fn(mode, optimize)
-        try:
-            lengths, paths = nx.single_source_dijkstra(
-                graph,
-                source=origin_node,
-                weight=weight_fn,
-            )
-        except Exception as exc:
-            _profile_log(
-                "shortest_tree_failed",
-                mode=mode,
-                optimize=optimize,
-                origin_node=origin_node,
-                error=type(exc).__name__,
-                runtime_ms=(time.perf_counter() - started_at) * 1000.0,
-            )
-            return None, None
-
-        self._shortest_tree_cache[key] = (lengths, paths, time.monotonic())
-        self._shortest_tree_cache.move_to_end(key)
-        while len(self._shortest_tree_cache) > self._shortest_tree_cache_max:
-            self._shortest_tree_cache.popitem(last=False)
-
-        try:
-            edges_processed = sum(int(graph.out_degree(node)) for node in lengths)
-        except Exception:
-            edges_processed = -1
-        _profile_log(
-            "shortest_tree_computed",
-            mode=mode,
-            optimize=optimize,
-            origin_node=origin_node,
-            nodes_visited=len(lengths),
-            edges_processed=edges_processed,
-            runtime_ms=(time.perf_counter() - started_at) * 1000.0,
-        )
-
-        return lengths, paths
-
-    def _pick_best_path_from_tree(
-        self,
-        lengths: dict,
-        paths: dict,
-        destination_candidates: list,
+        *,
+        undirected: bool,
     ) -> tuple[object | None, list | None, float]:
-        best_dest = None
+        if origin_node is None:
+            return None, None, float("inf")
+
+        targets = set(destination_candidates)
+        if not targets:
+            return None, None, float("inf")
+
+        if origin_node in targets:
+            return origin_node, [origin_node], 0.0
+
+        dist: dict = {origin_node: 0.0}
+        previous: dict = {}
+        queue: list[tuple[float, object]] = [(0.0, origin_node)]
+
+        while queue:
+            cost_so_far, node_id = heappop(queue)
+            known = dist.get(node_id)
+            if known is None or cost_so_far > known:
+                continue
+
+            if node_id in targets:
+                return node_id, self._reconstruct_path(previous, node_id), cost_so_far
+
+            for neighbor_id, edge_key in self._iter_neighbor_edges(
+                graph,
+                node_id,
+                undirected=undirected,
+            ):
+                edge_data, _reversed = self._resolve_step_edge_data(
+                    graph,
+                    node_id,
+                    neighbor_id,
+                    edge_key,
+                    undirected=undirected,
+                )
+                if edge_data is None:
+                    continue
+
+                step_weight = self._edge_cost_for_mode(edge_data, mode, optimize)
+                if step_weight is None:
+                    continue
+
+                next_cost = cost_so_far + float(step_weight)
+                best_known = dist.get(neighbor_id)
+                if best_known is not None and next_cost >= best_known:
+                    continue
+
+                dist[neighbor_id] = next_cost
+                previous[neighbor_id] = node_id
+                heappush(queue, (next_cost, neighbor_id))
+
+        return None, None, float("inf")
+
+    def _find_best_path_lightweight(
+        self,
+        graph: nx.MultiDiGraph,
+        origin_candidates: list,
+        destination_candidates: list,
+        mode: str,
+        optimize: str,
+        *,
+        max_origins: int,
+        undirected: bool,
+    ) -> tuple[tuple[object, object] | None, list | None, float, int]:
+        best_pair = None
         best_path = None
         best_cost = float("inf")
-        for dest_node in destination_candidates:
-            if dest_node not in lengths:
+        dijkstra_runs = 0
+
+        for origin_node in origin_candidates[: max(1, int(max_origins))]:
+            dijkstra_runs += 1
+            dest_node, candidate_path, candidate_cost = self._dijkstra_path_to_targets(
+                graph,
+                origin_node,
+                destination_candidates,
+                mode,
+                optimize,
+                undirected=undirected,
+            )
+            if not candidate_path:
                 continue
-            candidate_path = paths.get(dest_node)
-            if not candidate_path or len(candidate_path) < 2:
-                continue
-            candidate_cost = float(lengths[dest_node])
             if candidate_cost < best_cost:
                 best_cost = candidate_cost
-                best_dest = dest_node
+                best_pair = (origin_node, dest_node)
                 best_path = candidate_path
-        return best_dest, best_path, best_cost
+                # Latency-first behavior: accept the first valid origin path.
+                break
+
+        return best_pair, best_path, best_cost, dijkstra_runs
 
     async def compute(self, request: RouteRequest) -> RouteResponse:
         request_started = time.perf_counter()
@@ -253,15 +374,18 @@ class RoutingEngine:
             include_multimodal=bool(getattr(request, "include_multimodal", False)),
         )
 
-        ml_refresh_started = time.perf_counter()
-        await self._refresh_ml_weights()
-        ml_refresh_ms = (time.perf_counter() - ml_refresh_started) * 1000.0
+        runtime_ready_started = time.perf_counter()
+        full_graph = graph_service.ensure_loaded(raise_on_error=False)
+        if full_graph is not None and full_graph.number_of_nodes() > 0:
+            traffic_jam_service.ensure_initialized(full_graph)
+        runtime_ready_ms = (time.perf_counter() - runtime_ready_started) * 1000.0
 
         anomaly_started = time.perf_counter()
         anomaly_service.sync_active_effects()
         anomaly_sync_ms = (time.perf_counter() - anomaly_started) * 1000.0
 
         request.modes = [self._normalize_mode(m) for m in request.modes]
+        ml_refresh_ms = 0.0
 
         cache_lookup_started = time.perf_counter()
         cache_key = self._route_cache_key(request)
@@ -276,9 +400,14 @@ class RoutingEngine:
                 ml_refresh_ms=ml_refresh_ms,
                 anomaly_sync_ms=anomaly_sync_ms,
                 graph_hint_ms=0.0,
+                runtime_ready_ms=runtime_ready_ms,
                 cache_lookup_ms=cache_lookup_ms,
             )
             return cached_response
+
+        ml_refresh_started = time.perf_counter()
+        await self._refresh_ml_weights()
+        ml_refresh_ms = (time.perf_counter() - ml_refresh_started) * 1000.0
 
         graph_hint_started = time.perf_counter()
         full_graph = graph_service.get_graph()
@@ -440,6 +569,7 @@ class RoutingEngine:
             ml_refresh_ms=ml_refresh_ms,
             anomaly_sync_ms=anomaly_sync_ms,
             graph_hint_ms=graph_hint_ms,
+            runtime_ready_ms=runtime_ready_ms,
             cache_lookup_ms=cache_lookup_ms,
             routing_ms=routing_ms,
             aggregate_ms=aggregate_ms,
@@ -476,7 +606,6 @@ class RoutingEngine:
         dijkstra_runs = 0
         used_undirected = False
         used_full_graph_fallback = False
-        request_tree_cache: dict[tuple, tuple[dict, dict] | tuple[None, None]] = {}
 
         def _log_single(status: str, **extra):
             payload = {
@@ -507,13 +636,8 @@ class RoutingEngine:
             return [leg], [], 0
 
         edge_filter_started = time.perf_counter()
-        mode_graph = graph_service.get_subgraph_for_mode(mode)
         full_graph = graph_service.get_graph()
-        graph = mode_graph
-        if graph is None or graph.number_of_nodes() == 0:
-            # If mode-specific graph is empty/disconnected, fall back to full road graph
-            # so single-mode still follows realistic roads instead of a straight line.
-            graph = full_graph
+        graph = full_graph
         if graph is None or graph.number_of_nodes() == 0:
             leg = self._build_synthetic_leg(mode, origin, destination)
             edge_filter_ms = (time.perf_counter() - edge_filter_started) * 1000.0
@@ -551,93 +675,29 @@ class RoutingEngine:
             )
             return [leg], [], 0
 
-        def _find_best_path(candidate_graph, max_origins: int = 2):
+        def _find_best_path(max_origins: int, undirected: bool):
             nonlocal dijkstra_runs
-            best_pair = None
-            best_path = None
-            best_cost = float("inf")
-            origins_to_try = origin_candidates[: max(1, int(max_origins))]
-            for origin_node in origins_to_try:
-                tree_key = (
-                    id(candidate_graph),
-                    origin_node,
-                    mode,
-                    optimize,
-                    self._current_graph_version(),
-                )
-                cached_tree = request_tree_cache.get(tree_key)
-                if cached_tree is None:
-                    dijkstra_runs += 1
-                    cached_tree = self._get_shortest_path_tree(
-                        candidate_graph,
-                        origin_node,
-                        mode,
-                        optimize,
-                    )
-                    request_tree_cache[tree_key] = cached_tree
-
-                lengths, paths = cached_tree
-                if lengths is None or paths is None:
-                    continue
-
-                dest_node, path, cost = self._pick_best_path_from_tree(
-                    lengths,
-                    paths,
-                    dest_candidates,
-                )
-                if path and cost < best_cost:
-                    best_cost = cost
-                    best_pair = (origin_node, dest_node)
-                    best_path = path
-                    # Latency-first path selection: stop at first feasible origin
-                    # and rely on fallback branches only when no path exists.
-                    break
+            best_pair, best_path, _best_cost, runs = self._find_best_path_lightweight(
+                graph,
+                origin_candidates,
+                dest_candidates,
+                mode,
+                optimize,
+                max_origins=max_origins,
+                undirected=undirected,
+            )
+            dijkstra_runs += runs
             return best_pair, best_path
 
         routing_started = time.perf_counter()
-        routing_graph = graph
-        best_pair, best_path = _find_best_path(routing_graph, max_origins=2)
+        best_pair, best_path = _find_best_path(max_origins=2, undirected=False)
 
         # For walking/bike/rickshaw/bus-like traversal, one-way directionality can
         # make reachable roads appear disconnected. Retry on undirected topology
         # before falling back to synthetic geometry.
         if best_path is None:
             used_undirected = True
-            routing_graph = graph.to_undirected(as_view=True)
-            best_pair, best_path = _find_best_path(routing_graph, max_origins=3)
-
-        # Secondary fallback: if mode graph cannot connect endpoints, retry on full graph
-        # before returning synthetic straight-line route.
-        if (
-            best_path is None
-            and mode_graph is not None
-            and mode_graph.number_of_nodes() > 0
-            and full_graph is not None
-            and full_graph.number_of_nodes() > 0
-            and full_graph is not mode_graph
-        ):
-            used_full_graph_fallback = True
-            graph = full_graph
-            if origin_candidates_hint:
-                origin_candidates = [n for n in origin_candidates_hint if n in graph]
-            else:
-                origin_candidates = graph_service.get_k_nearest_nodes_in_graph(
-                    graph, origin.lat, origin.lng, k=8
-                )
-
-            if destination_candidates_hint:
-                dest_candidates = [n for n in destination_candidates_hint if n in graph]
-            else:
-                dest_candidates = graph_service.get_k_nearest_nodes_in_graph(
-                    graph, destination.lat, destination.lng, k=8
-                )
-
-            routing_graph = graph
-            best_pair, best_path = _find_best_path(routing_graph, max_origins=2)
-            if best_path is None:
-                used_undirected = True
-                routing_graph = graph.to_undirected(as_view=True)
-                best_pair, best_path = _find_best_path(routing_graph, max_origins=3)
+            best_pair, best_path = _find_best_path(max_origins=3, undirected=True)
 
         routing_search_ms = (time.perf_counter() - routing_started) * 1000.0
 
@@ -685,11 +745,22 @@ class RoutingEngine:
         total_distance_m = 0.0
         total_duration_s = 0.0
         weight_fn = self._build_weight_fn(mode, optimize)
+        allow_reverse_edge = used_undirected
 
         for i in range(len(path) - 1):
             u = path[i]
             v = path[i + 1]
-            edge_data = self._best_edge_data(routing_graph, u, v, weight_fn)
+            edge_data = self._best_edge_data_for_step(
+                graph,
+                u,
+                v,
+                mode,
+                optimize,
+                weight_fn,
+                allow_reverse_edge=allow_reverse_edge,
+            )
+            if not edge_data:
+                continue
             total_distance_m += float(edge_data.get("length") or 0.0)
             total_duration_s += float(
                 edge_data.get(f"{mode}_travel_time")
@@ -701,13 +772,20 @@ class RoutingEngine:
                 chosen_key = 0
             traffic_edges.append(
                 RouteTrafficEdge(
-                    edge_id=f"{u}->{v}:{chosen_key}",
+                    edge_id=str(
+                        edge_data.get("_edge_id") or f"{u}->{v}:{chosen_key}"
+                    ),
                     road_type=self._road_type(edge_data),
                     length_m=float(edge_data.get("length") or 0.0),
                 )
             )
 
-            edge_points = self._edge_geometry_points(routing_graph, u, v, edge_data)
+            if bool(edge_data.get("_reverse", False)):
+                edge_points = list(
+                    reversed(self._edge_geometry_points(graph, v, u, edge_data))
+                )
+            else:
+                edge_points = self._edge_geometry_points(graph, u, v, edge_data)
             if geometry and edge_points:
                 if (
                     geometry[-1].lat == edge_points[0].lat
@@ -1167,6 +1245,44 @@ class RoutingEngine:
             best_edge = dict(best_edge)
             best_edge["_key"] = best_key
         return best_edge
+
+    def _best_edge_data_for_step(
+        self,
+        graph: nx.MultiDiGraph,
+        u,
+        v,
+        mode: str,
+        optimize: str,
+        weight_fn: Callable,
+        *,
+        allow_reverse_edge: bool,
+    ) -> dict:
+        if graph.has_edge(u, v):
+            best_direct = self._best_edge_data(graph, u, v, weight_fn)
+            if best_direct:
+                chosen_key = best_direct.get("_key")
+                if chosen_key is None:
+                    chosen_key = 0
+                best_direct["_edge_id"] = f"{u}->{v}:{chosen_key}"
+            return best_direct
+
+        if not allow_reverse_edge or not graph.has_edge(v, u):
+            return {}
+
+        best_reverse = self._best_edge_data(graph, v, u, weight_fn)
+        if not best_reverse:
+            return {}
+
+        if self._edge_cost_for_mode(best_reverse, mode, optimize) is None:
+            return {}
+
+        best_reverse = dict(best_reverse)
+        best_reverse["_reverse"] = True
+        chosen_key = best_reverse.get("_key")
+        if chosen_key is None:
+            chosen_key = 0
+        best_reverse["_edge_id"] = f"{v}->{u}:{chosen_key}"
+        return best_reverse
 
     def _edge_geometry_points(
         self, graph: nx.MultiDiGraph, u, v, edge_data: dict
@@ -1657,6 +1773,12 @@ class RoutingEngine:
         return options
 
     async def _refresh_ml_weights(self):
+        now = time.monotonic()
+        if self._ml_refresh_interval_s > 0.0:
+            if (now - self._last_ml_refresh_monotonic) < self._ml_refresh_interval_s:
+                return
+            self._last_ml_refresh_monotonic = now
+
         started = time.perf_counter()
         try:
             await ml_integration.refresh_predictions()

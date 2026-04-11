@@ -27,8 +27,6 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
@@ -46,10 +44,21 @@ class TrafficJamService:
     """Dummy dataset + ML training + route risk inference."""
 
     def __init__(self):
-        self._model: RandomForestClassifier | None = None
+        self._model = None
         self._road_type_code: dict[str, int] = {}
         self._jam_lookup: dict[tuple[str, int], int] = {}
         self._csv_path: Path | None = None
+        self._initialized = False
+        self._init_lock = threading.RLock()
+        self._enable_model = str(
+            os.getenv("TRAFFIC_ENABLE_MODEL", "0")
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self._dataset_auto_build = str(
+            os.getenv("TRAFFIC_DATASET_AUTO_BUILD", "0")
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self._auto_start_workers = str(
+            os.getenv("TRAFFIC_AUTO_START_WORKERS", "0")
+        ).strip().lower() in {"1", "true", "yes", "on"}
         self._edge_prediction_cache: dict[tuple[str, int], tuple[float, int, float]] = (
             {}
         )
@@ -58,6 +67,14 @@ class TrafficJamService:
         # Central route job store.
         self._route_predictions: dict[str, dict] = {}
         self._route_prediction_ttl_s: float = 900.0
+        self._route_predictions_max: int = max(
+            32,
+            int(os.getenv("TRAFFIC_ROUTE_JOB_MAX", "128")),
+        )
+        self._max_edges_per_route_job: int = max(
+            24,
+            int(os.getenv("TRAFFIC_ROUTE_MAX_EDGES", "220")),
+        )
 
         # Backward-compatibility dictionary (older tests clear this key).
         self._route_prediction_tasks: dict[str, asyncio.Task] = {}
@@ -67,11 +84,11 @@ class TrafficJamService:
             0,
             int(os.getenv("TRAFFIC_JOB_MAX_RETRIES", "3")),
         )
-        configured_workers = int(os.getenv("TRAFFIC_WORKER_COUNT", "3"))
-        self._worker_count: int = max(2, min(4, configured_workers))
+        configured_workers = int(os.getenv("TRAFFIC_WORKER_COUNT", "1"))
+        self._worker_count: int = max(1, min(2, configured_workers))
         self._queue_maxsize: int = max(
-            128,
-            int(os.getenv("TRAFFIC_QUEUE_MAXSIZE", "2048")),
+            32,
+            int(os.getenv("TRAFFIC_QUEUE_MAXSIZE", "256")),
         )
 
         self._state_lock = threading.RLock()
@@ -81,38 +98,60 @@ class TrafficJamService:
         self._retry_tasks: set[asyncio.Task] = set()
         self._worker_loop: asyncio.AbstractEventLoop | None = None
 
+    def ensure_initialized(self, graph) -> None:
+        if self._initialized:
+            return
+        if graph is None:
+            return
+
+        with self._init_lock:
+            if self._initialized:
+                return
+            self.initialize_from_graph(graph)
+
     def initialize_from_graph(self, graph) -> None:
         """Ensure dataset exists, train from CSV, and build lookup cache."""
         if graph is None:
             return
 
-        csv_path: Path | None = None
-        try:
-            with SessionLocal() as db:
-                expected_rows = graph.number_of_edges() * 24
-                existing_rows = db.query(RoadTrafficObservation).count()
-                if existing_rows < expected_rows:
-                    self._regenerate_dataset(db, graph)
+        with self._init_lock:
+            if self._initialized:
+                return
 
-                csv_path = self._ensure_dataset_csv(db)
-        except Exception:
-            # Keep routing alive when database is unavailable.
             csv_path = self._find_existing_csv()
 
-        if csv_path is None:
-            self._model = None
-            self._jam_lookup = {}
-            return
+            if csv_path is None:
+                try:
+                    with SessionLocal() as db:
+                        if self._dataset_auto_build:
+                            expected_rows = graph.number_of_edges() * 24
+                            existing_rows = db.query(RoadTrafficObservation).count()
+                            if existing_rows < expected_rows:
+                                self._regenerate_dataset(db, graph)
+                            csv_path = self._ensure_dataset_csv(db)
+                        else:
+                            csv_path = self._ensure_dataset_csv(db)
+                except Exception:
+                    csv_path = self._find_existing_csv()
 
-        self._csv_path = csv_path
-        self._train_from_csv(csv_path)
-        self._load_jam_lookup_from_csv(csv_path)
+            self._csv_path = csv_path
+            if csv_path is not None:
+                self._load_jam_lookup_from_csv(csv_path)
+
+            if self._enable_model and csv_path is not None:
+                self._train_from_csv(csv_path)
+            else:
+                self._model = None
+                self._edge_prediction_cache = {}
+
+            self._initialized = True
+            return
 
     async def start_workers(self, worker_count: int | None = None) -> None:
         """Start queue workers for traffic jobs (idempotent per event loop)."""
         loop = asyncio.get_running_loop()
         if worker_count is not None:
-            self._worker_count = max(2, min(4, int(worker_count)))
+            self._worker_count = max(1, min(2, int(worker_count)))
 
         self._ensure_worker_loop(loop)
 
@@ -315,6 +354,55 @@ class TrafficJamService:
             return "ready"
         return "failed"
 
+    def _compact_edge_contexts(self, edge_contexts: list[dict]) -> list[dict]:
+        compact: list[dict] = []
+        for edge in edge_contexts:
+            edge_id = str(edge.get("edge_id") or "").strip()
+            if not edge_id:
+                continue
+            compact.append(
+                {
+                    "edge_id": edge_id,
+                    "road_type": str(edge.get("road_type") or "unknown"),
+                    "length_m": float(edge.get("length_m") or 0.0),
+                }
+            )
+
+        max_edges = max(1, int(self._max_edges_per_route_job))
+        if len(compact) <= max_edges:
+            return compact
+
+        # Keep a representative spread across long routes.
+        sample: list[dict] = [compact[0]]
+        span = len(compact) - 1
+        if max_edges > 1:
+            for i in range(1, max_edges - 1):
+                idx = int((i * span) / max(1, (max_edges - 1)))
+                sample.append(compact[idx])
+            sample.append(compact[-1])
+        return sample[:max_edges]
+
+    def _enforce_route_prediction_limit_locked(self) -> bool:
+        limit = max(1, int(self._route_predictions_max))
+        if len(self._route_predictions) < limit:
+            return True
+
+        terminal_jobs = [
+            (
+                float(item.get("updated_monotonic") or 0.0),
+                route_id,
+            )
+            for route_id, item in self._route_predictions.items()
+            if str(item.get("status") or "") in {"completed", "failed"}
+        ]
+        terminal_jobs.sort(key=lambda t: t[0])
+
+        while len(self._route_predictions) >= limit and terminal_jobs:
+            _, stale_route_id = terminal_jobs.pop(0)
+            self._route_predictions.pop(stale_route_id, None)
+
+        return len(self._route_predictions) < limit
+
     def start_route_prediction(
         self,
         edge_contexts: list[dict],
@@ -326,9 +414,30 @@ class TrafficJamService:
         route_id = f"route_{uuid.uuid4().hex[:12]}"
         now_wall = time.time()
         now_mono = time.monotonic()
+        compact_contexts = self._compact_edge_contexts(edge_contexts)
 
         with self._state_lock:
-            if not edge_contexts:
+            if not self._enforce_route_prediction_limit_locked():
+                self._route_predictions[route_id] = {
+                    "status": "failed",
+                    "result": None,
+                    "error": "traffic job store limit reached",
+                    "retry_count": 0,
+                    "max_retries": self._max_job_retries,
+                    "edge_contexts": [],
+                    "hour_of_day": hour_of_day,
+                    "queued": False,
+                    "created_at": now_wall,
+                    "updated_at": now_wall,
+                    "updated_monotonic": now_mono,
+                }
+                return {
+                    "route_id": route_id,
+                    "status": "failed",
+                    "data": None,
+                }
+
+            if not compact_contexts:
                 self._route_predictions[route_id] = {
                     "status": "completed",
                     "result": None,
@@ -354,7 +463,7 @@ class TrafficJamService:
                 "error": None,
                 "retry_count": 0,
                 "max_retries": self._max_job_retries,
-                "edge_contexts": list(edge_contexts),
+                "edge_contexts": compact_contexts,
                 "hour_of_day": hour_of_day,
                 "queued": False,
                 "created_at": now_wall,
@@ -386,9 +495,36 @@ class TrafficJamService:
                         job["error"] = str(exc)
                         self._touch_job_locked(job)
         else:
-            self._ensure_worker_loop(loop)
             with self._state_lock:
-                self._enqueue_job_locked(route_id)
+                same_loop = self._worker_loop is loop and self._job_queue is not None
+
+            if same_loop:
+                with self._state_lock:
+                    self._enqueue_job_locked(route_id)
+            elif self._auto_start_workers:
+                self._ensure_worker_loop(loop)
+                with self._state_lock:
+                    self._enqueue_job_locked(route_id)
+            else:
+                try:
+                    data = self.predict_route_jam(compact_contexts, hour_of_day=hour_of_day)
+                    with self._state_lock:
+                        job = self._route_predictions.get(route_id)
+                        if job is not None:
+                            job["status"] = "completed"
+                            job["result"] = data
+                            job["error"] = None
+                            self._touch_job_locked(job)
+                except Exception as exc:
+                    with self._state_lock:
+                        job = self._route_predictions.get(route_id)
+                        if job is not None:
+                            job["status"] = "failed"
+                            job["retry_count"] = int(
+                                job.get("max_retries") or self._max_job_retries
+                            )
+                            job["error"] = str(exc)
+                            self._touch_job_locked(job)
 
         with self._state_lock:
             current = self._route_predictions.get(route_id, {})
@@ -462,12 +598,11 @@ class TrafficJamService:
             if not edge_contexts:
                 return None
 
-            if self._model is None:
-                if self._csv_path is not None:
-                    self._train_from_csv(self._csv_path)
-                    self._load_jam_lookup_from_csv(self._csv_path)
-                if self._model is None:
-                    return None
+            if self._model is None and self._enable_model and self._csv_path is not None:
+                self._train_from_csv(self._csv_path)
+                self._load_jam_lookup_from_csv(self._csv_path)
+
+            model = self._model
 
             self._evict_expired_edge_cache()
 
@@ -504,6 +639,16 @@ class TrafficJamService:
                 if jam_level is None:
                     jam_level = self._dummy_level(edge_id, road_type, hour)
 
+                if model is None:
+                    edge_jam_prob = {1: 0.20, 2: 0.58, 3: 0.90}.get(int(jam_level), 0.50)
+                    self._edge_prediction_cache[cache_key] = (
+                        float(edge_jam_prob),
+                        int(jam_level),
+                        time.monotonic(),
+                    )
+                    resolved_edges.append((float(edge_jam_prob), int(jam_level)))
+                    continue
+
                 pending_features.append(
                     [
                         float(hour),
@@ -514,10 +659,10 @@ class TrafficJamService:
                 )
                 pending_meta.append((cache_key, int(jam_level)))
 
-            if pending_features:
+            if pending_features and model is not None:
                 x = np.asarray(pending_features, dtype=float)
-                class_probs = self._model.predict_proba(x)
-                classes = list(self._model.classes_)
+                class_probs = model.predict_proba(x)
+                classes = list(model.classes_)
                 mod_idx = classes.index(2) if 2 in classes else None
                 heavy_idx = classes.index(3) if 3 in classes else None
                 now = time.monotonic()
@@ -627,6 +772,9 @@ class TrafficJamService:
 
     def _train_from_csv(self, csv_path: Path) -> None:
         """Train a 3-class classifier (Low/Moderate/Heavy) from dataset CSV."""
+        import pandas as pd
+        from sklearn.ensemble import RandomForestClassifier
+
         if not csv_path.exists():
             self._model = None
             self._edge_prediction_cache = {}
@@ -657,11 +805,12 @@ class TrafficJamService:
         y = df["jam_level"].astype(int).to_numpy()
 
         model = RandomForestClassifier(
-            n_estimators=180,
-            max_depth=14,
-            min_samples_split=4,
+            n_estimators=64,
+            max_depth=8,
+            min_samples_split=6,
+            min_samples_leaf=4,
             random_state=42,
-            n_jobs=-1,
+            n_jobs=1,
         )
         model.fit(x, y)
         self._model = model
@@ -669,6 +818,8 @@ class TrafficJamService:
 
     def _load_jam_lookup_from_csv(self, csv_path: Path) -> None:
         """Cache jam levels from CSV keyed by (edge_id, hour)."""
+        import pandas as pd
+
         self._jam_lookup = {}
         self._edge_prediction_cache = {}
         if not csv_path.exists():

@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import math
 import os
+import threading
 import time
 from typing import Optional
 
 import networkx as nx
 import numpy as np
-import osmnx as ox
-from sklearn.neighbors import KDTree
 
 from config import settings
 from models.graph_models import GraphSnapshot, GraphNode, GraphEdge
@@ -22,6 +21,26 @@ from models.graph_models import GraphSnapshot, GraphNode, GraphEdge
 
 _PROFILE_ENV = "ROUTING_PROFILE"
 _PROFILE_FALSE_VALUES = {"0", "false", "off", "no"}
+
+
+class _OsmnxProxy:
+    """Lazy osmnx module proxy to keep startup memory low."""
+
+    def __init__(self):
+        self._module = None
+
+    def _load(self):
+        if self._module is None:
+            import osmnx as loaded_osmnx
+
+            self._module = loaded_osmnx
+        return self._module
+
+    def __getattr__(self, name):
+        return getattr(self._load(), name)
+
+
+ox = _OsmnxProxy()
 
 
 def _profiling_enabled() -> bool:
@@ -165,22 +184,62 @@ class GraphService:
     def __init__(self):
         self._graph: Optional[nx.MultiDiGraph] = None
         self._loaded = False
+        self._graph_lock = threading.RLock()
+        self._last_load_error: Optional[str] = None
         self._center_lat = float(settings.graph_center_lat)
         self._center_lng = float(settings.graph_center_lng)
         self._radius_m = float(settings.graph_radius_m)
         self._mode_subgraph_cache: dict[str, nx.MultiDiGraph] = {}
+        self._out_edges_by_node: dict[object, tuple[tuple[object, object], ...]] = {}
+        self._undirected_edges_by_node: dict[
+            object, tuple[tuple[object, object], ...]
+        ] = {}
         self._graph_version: int = 0
         self._node_ids: list = []
         self._node_coords: np.ndarray | None = None
-        self._node_kdtree: KDTree | None = None
+        self._node_kdtree = None
+
+    def ensure_loaded(
+        self,
+        location: Optional[str] = None,
+        *,
+        raise_on_error: bool = False,
+    ) -> Optional[nx.MultiDiGraph]:
+        """Lazy-load graph once and return the shared instance."""
+        if self._loaded and self._graph is not None:
+            return self._graph
+
+        with self._graph_lock:
+            if self._loaded and self._graph is not None:
+                return self._graph
+
+            try:
+                self.load_graph(location=location)
+            except Exception as exc:
+                self._loaded = False
+                self._graph = None
+                self._last_load_error = str(exc)
+                if raise_on_error:
+                    raise
+                print(f"[GraphService] Lazy load failed: {exc}")
+                return None
+
+        return self._graph
+
+    def get_last_load_error(self) -> Optional[str]:
+        return self._last_load_error
 
     def load_graph(self, location: Optional[str] = None):
         """Download/load OSM graph and normalize edge attributes for routing."""
+        with self._graph_lock:
+            self._last_load_error = None
+
         load_started = time.perf_counter()
         fetch_ms = 0.0
         trim_ms = 0.0
         normalize_ms = 0.0
         mode_cache_ms = 0.0
+        edge_index_ms = 0.0
         spatial_index_ms = 0.0
 
         location = location or settings.osm_location
@@ -248,11 +307,15 @@ class GraphService:
         self._rebuild_mode_subgraph_cache()
         mode_cache_ms = (time.perf_counter() - mode_cache_started) * 1000.0
 
+        edge_index_started = time.perf_counter()
+        self._rebuild_edge_indexes()
+        edge_index_ms = (time.perf_counter() - edge_index_started) * 1000.0
+
         spatial_index_started = time.perf_counter()
         self._rebuild_spatial_index()
         spatial_index_ms = (time.perf_counter() - spatial_index_started) * 1000.0
 
-        self._graph_version = 1
+        self._graph_version += 1
         self._loaded = True
 
         total_ms = (time.perf_counter() - load_started) * 1000.0
@@ -268,9 +331,42 @@ class GraphService:
             trim_ms=trim_ms,
             normalize_ms=normalize_ms,
             subgraph_cache_ms=mode_cache_ms,
+            edge_index_ms=edge_index_ms,
             spatial_index_ms=spatial_index_ms,
             total_ms=total_ms,
         )
+
+    def _rebuild_edge_indexes(self):
+        self._out_edges_by_node = {}
+        self._undirected_edges_by_node = {}
+
+        if not self._graph:
+            return
+
+        out_edges: dict[object, list[tuple[object, object]]] = {}
+        undirected_edges: dict[object, list[tuple[object, object]]] = {}
+
+        for u, v, k in self._graph.edges(keys=True):
+            out_edges.setdefault(u, []).append((v, k))
+            undirected_edges.setdefault(u, []).append((v, k))
+            undirected_edges.setdefault(v, []).append((u, k))
+
+        self._out_edges_by_node = {
+            node_id: tuple(edges) for node_id, edges in out_edges.items()
+        }
+        self._undirected_edges_by_node = {
+            node_id: tuple(edges) for node_id, edges in undirected_edges.items()
+        }
+
+    def get_outgoing_edges(
+        self,
+        node_id,
+        *,
+        undirected: bool = False,
+    ) -> tuple[tuple[object, object], ...]:
+        if undirected:
+            return self._undirected_edges_by_node.get(node_id, ())
+        return self._out_edges_by_node.get(node_id, ())
 
     def _rebuild_spatial_index(self):
         self._node_ids = []
@@ -299,6 +395,8 @@ class GraphService:
 
         self._node_ids = node_ids
         self._node_coords = arr
+        from sklearn.neighbors import KDTree
+
         self._node_kdtree = KDTree(arr, leaf_size=40)
 
     def _query_candidates_from_kdtree(self, lat: float, lng: float, k: int) -> list:
@@ -319,23 +417,8 @@ class GraphService:
         return candidates
 
     def _rebuild_mode_subgraph_cache(self):
+        # Keep cached mode views lightweight by invalidating only.
         self._mode_subgraph_cache = {}
-        if not self._graph:
-            return
-
-        for mode in settings.vehicle_types.keys():
-            mode_flag = f"{mode}_allowed"
-            edges = [
-                (u, v, k)
-                for u, v, k, data in self._graph.edges(keys=True, data=True)
-                if bool(data.get(mode_flag, False))
-            ]
-            if edges:
-                self._mode_subgraph_cache[mode] = self._graph.edge_subgraph(
-                    edges
-                ).copy()
-            else:
-                self._mode_subgraph_cache[mode] = nx.MultiDiGraph()
 
     def get_graph_version(self) -> int:
         return int(self._graph_version)
@@ -456,7 +539,7 @@ class GraphService:
         self._normalize_edge_attributes()
 
     def is_loaded(self) -> bool:
-        return self._loaded
+        return self._loaded and self._graph is not None
 
     def get_graph(self) -> Optional[nx.MultiDiGraph]:
         """Return the underlying NetworkX graph for direct access."""
@@ -747,19 +830,19 @@ class GraphService:
             return cached
 
         mode_flag = f"{mode}_allowed"
-        edges = [
-            (u, v, k)
-            for u, v, k, data in self._graph.edges(keys=True, data=True)
-            if bool(data.get(mode_flag, False))
-        ]
-        if not edges:
-            graph = nx.MultiDiGraph()
-            self._mode_subgraph_cache[mode] = graph
-            return graph
 
-        graph = self._graph.edge_subgraph(edges).copy()
-        self._mode_subgraph_cache[mode] = graph
-        return graph
+        def _edge_filter(u, v, k):
+            edge_data = self._graph.get_edge_data(u, v, key=k, default=None)
+            if not edge_data:
+                return False
+            return bool(edge_data.get(mode_flag, False))
+
+        mode_view = nx.subgraph_view(
+            self._graph,
+            filter_edge=_edge_filter,
+        )
+        self._mode_subgraph_cache[mode] = mode_view
+        return mode_view
 
     def update_edge_weight(self, source: str, target: str, multiplier: float):
         if not self._graph:
@@ -820,6 +903,8 @@ class GraphService:
         include_edges: bool = False,
         bbox: Optional[tuple] = None,
         mode_filter: Optional[str] = None,
+        max_nodes: int = 800,
+        max_edges: int = 1200,
     ) -> GraphSnapshot:
         """
         Get a snapshot of the graph, optionally filtered by transport mode.
@@ -859,6 +944,8 @@ class GraphService:
                 anomaly_ids_by_edge = {}
 
         south, west, north, east = bbox or (None, None, None, None)
+        max_nodes = max(1, int(max_nodes))
+        max_edges = max(1, int(max_edges))
 
         def in_bbox(lat: float, lng: float) -> bool:
             if bbox is None:
@@ -884,6 +971,8 @@ class GraphService:
                         accessible_modes=accessible_modes,
                     )
                 )
+                if len(nodes) >= max_nodes:
+                    break
 
         if include_edges:
             for u, v, _, data in self._graph.edges(keys=True, data=True):
@@ -940,6 +1029,8 @@ class GraphService:
                         active_anomalies=anomaly_ids_by_edge.get(edge_id, []),
                     )
                 )
+                if len(edges) >= max_edges:
+                    break
 
         bbox_list = list(bbox) if bbox is not None else None
         return GraphSnapshot(
