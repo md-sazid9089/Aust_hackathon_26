@@ -53,21 +53,92 @@ function HomePage({ onNavigateToMap, apiStatus }) {
       {/* ═══ Hero Section ══════════════════════════════════════ */}
       <section style={{
         position: 'relative', overflow: 'hidden',
-        padding: '100px 24px 80px',
+        height: '100vh',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: '#000000',
+        marginTop: 0,
       }}>
         {/* Radial glow backdrop */}
         <div className="radial-glow" style={{
           width: 600, height: 600,
-          background: 'radial-gradient(circle, rgba(14,165,233,0.15) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(14,165,233,0.12) 0%, transparent 70%)',
           top: '50%', left: '50%',
           transform: 'translate(-50%, -50%)',
         }} />
         <div className="radial-glow" style={{
           width: 300, height: 300,
-          background: 'radial-gradient(circle, rgba(20,184,166,0.12) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(20,184,166,0.10) 0%, transparent 70%)',
           top: '20%', right: '10%',
         }} />
+
+        {/* Node-based map network background */}
+        <svg
+          style={{
+            position: 'absolute',
+            width: '100%',
+            height: '100%',
+            top: 0,
+            left: 0,
+            opacity: 0.4,
+            pointerEvents: 'none',
+          }}
+          viewBox="0 0 1200 600"
+          preserveAspectRatio="xMidYMid slice"
+        >
+          <defs>
+            <linearGradient id="edgeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style={{stopColor: 'rgba(56,189,248,0.3)', stopOpacity: 1}} />
+              <stop offset="100%" style={{stopColor: 'rgba(20,184,166,0.2)', stopOpacity: 1}} />
+            </linearGradient>
+          </defs>
+          
+          {/* Network edges/paths - OSM style */}
+          <g stroke="url(#edgeGradient)" strokeWidth="1.5" fill="none">
+            {/* Major routes */}
+            <path d="M100 50 L 300 180 L 500 100 L 700 280 L 900 120 L 1100 320" />
+            <path d="M150 500 L 350 350 L 550 480 L 750 320 L 950 450 L 1100 280" />
+            <path d="M50 200 L 200 350 L 350 150 L 600 400 L 850 200 L 1050 450" />
+            
+            {/* Secondary routes */}
+            <path d="M100 50 L 100 300 L 100 550" />
+            <path d="M300 180 L 300 400" />
+            <path d="M500 100 L 500 480" />
+            <path d="M700 280 L 700 500" />
+            <path d="M900 120 L 900 450" />
+            
+            {/* Cross-connections */}
+            <path d="M200 150 Q 400 250, 600 180" />
+            <path d="M400 200 Q 600 350, 800 250" />
+            <path d="M600 320 Q 800 400, 1000 350" />
+          </g>
+          
+          {/* Network nodes - city/intersection points */}
+          <g fill="#38bdf8" opacity="0.8">
+            <circle cx="100" cy="50" r="3" />
+            <circle cx="300" cy="180" r="3.5" />
+            <circle cx="500" cy="100" r="3" />
+            <circle cx="700" cy="280" r="4" />
+            <circle cx="900" cy="120" r="3" />
+            <circle cx="1100" cy="320" r="3.5" />
+            
+            <circle cx="150" cy="500" r="3" />
+            <circle cx="350" cy="350" r="3.5" />
+            <circle cx="550" cy="480" r="3" />
+            <circle cx="750" cy="320" r="3.5" />
+            <circle cx="950" cy="450" r="3" />
+            
+            <circle cx="50" cy="200" r="3" />
+            <circle cx="200" cy="350" r="3" />
+            <circle cx="1050" cy="450" r="3" />
+          </g>
+          
+          {/* Glow effect on major nodes */}
+          <g fill="none" stroke="#14b8a6" strokeWidth="1" opacity="0.3">
+            <circle cx="700" cy="280" r="8" />
+            <circle cx="550" cy="480" r="8" />
+            <circle cx="300" cy="180" r="8" />
+          </g>
+        </svg>
 
         <div style={{ position: 'relative', maxWidth: 780, width: '100%', textAlign: 'center', zIndex: 1 }}>
           {/* Tag pill */}

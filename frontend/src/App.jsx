@@ -231,11 +231,11 @@ function App() {
       {/* ══════════════════════════════════════════════════
           PAGE CONTENT
           - On map page: MapPage uses position:fixed independently
-          - On home page: normal flow content with top padding for navbar
+          - On home page: normal flow content with no top padding (hero extends behind navbar)
       ══════════════════════════════════════════════════ */}
       <main style={{
         flex: 1, position: 'relative', display: 'flex', flexDirection: 'column',
-        paddingTop: isMapPage || currentPage === 'login' || currentPage === 'signup' ? 0 : 76,   /* no padding for map, login, and signup pages */
+        paddingTop: isMapPage || currentPage === 'login' || currentPage === 'signup' ? 0 : 0,
       }}>
         {currentPage === 'home' ? (
           <HomePage onNavigateToMap={() => setCurrentPage('map')} apiStatus={apiStatus} />
