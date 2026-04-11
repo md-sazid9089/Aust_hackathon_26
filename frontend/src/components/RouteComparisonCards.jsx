@@ -19,9 +19,11 @@ function RouteComparisonCards({
   // Check if routes are effectively identical
   const areRoutesIdentical = useMemo(() => {
     if (!min_time_route || !min_distance_route) return false;
-    
-    const timeDiff = Math.abs(min_time_route.total_distance - min_distance_route.total_distance);
-    const distSimilarity = timeDiff / Math.max(min_time_route.total_distance, min_distance_route.total_distance);
+
+    const timeDistance = Number(min_time_route.total_distance ?? min_time_route.total_distance_m ?? 0);
+    const distanceDistance = Number(min_distance_route.total_distance ?? min_distance_route.total_distance_m ?? 0);
+    const timeDiff = Math.abs(timeDistance - distanceDistance);
+    const distSimilarity = timeDiff / Math.max(timeDistance, distanceDistance, 1);
     
     // Consider identical if within 5% difference
     return distSimilarity < 0.05;
@@ -30,9 +32,14 @@ function RouteComparisonCards({
   // Compute comparison insights
   const insights = useMemo(() => {
     if (!min_time_route || !min_distance_route) return null;
-    
-    const timeDiff = min_time_route.total_time - min_distance_route.total_time;
-    const distDiff = min_distance_route.total_distance - min_time_route.total_distance;
+
+    const timeTime = Number(min_time_route.total_time ?? min_time_route.total_duration_s ?? 0);
+    const distanceTime = Number(min_distance_route.total_time ?? min_distance_route.total_duration_s ?? 0);
+    const timeDistance = Number(min_time_route.total_distance ?? min_time_route.total_distance_m ?? 0);
+    const distanceDistance = Number(min_distance_route.total_distance ?? min_distance_route.total_distance_m ?? 0);
+
+    const timeDiff = timeTime - distanceTime;
+    const distDiff = distanceDistance - timeDistance;
     
     return {
       timeDiff: Math.abs(timeDiff),
@@ -98,10 +105,10 @@ function RouteComparisonCards({
           fontFamily: 'JetBrains Mono, monospace',
         }}>
           <span style={{ color: '#a3a3a3' }}>
-            {formatDistance(min_time_route.total_distance)}
+            {formatDistance(Number(min_time_route.total_distance ?? min_time_route.total_distance_m ?? 0))}
           </span>
           <span style={{ color: '#a3a3a3' }}>
-            {formatDuration(min_time_route.total_time)}
+            {formatDuration(Number(min_time_route.total_time ?? min_time_route.total_duration_s ?? 0))}
           </span>
         </div>
       </div>
@@ -143,8 +150,8 @@ function RouteComparisonCards({
       {/* Blue: Fastest Route Card */}
       <RouteComparisonCard
         title="Fastest Route"
-        icon="🔵"
-        color="#3b82f6"
+        icon="🟣"
+        color="#6d28d9"
         route={min_time_route}
         isSelected={isTimeSelected}
         isHovered={hoveredRoute === 'min_time'}
@@ -160,8 +167,8 @@ function RouteComparisonCards({
       {/* Green: Shortest Route Card */}
       <RouteComparisonCard
         title="Shortest Route"
-        icon="🟢"
-        color="#22c55e"
+        icon="💗"
+        color="#db2777"
         route={min_distance_route}
         isSelected={isDistanceSelected}
         isHovered={hoveredRoute === 'min_distance'}
@@ -276,7 +283,7 @@ function RouteComparisonCard({
           gap: 2,
         }}>
           <div style={{ color: color, fontSize: 13 }}>
-            {formatDistance(route.total_distance)}
+            {formatDistance(Number(route.total_distance ?? route.total_distance_m ?? 0))}
           </div>
           <div style={{
             fontSize: 8,
@@ -294,7 +301,7 @@ function RouteComparisonCard({
           gap: 2,
         }}>
           <div style={{ color: color, fontSize: 13 }}>
-            {formatDuration(route.total_time)}
+            {formatDuration(Number(route.total_time ?? route.total_duration_s ?? 0))}
           </div>
           <div style={{
             fontSize: 8,
