@@ -17,7 +17,7 @@ Multi-modal hyper-local routing engine that computes road-accurate routes around
 2. Add an anomaly and verify route adaptation.
 3. Confirm async traffic lifecycle (`loading -> ready`) from `route_id` polling.
 4. Compare multimodal fastest vs shortest route options in UI.
-5. ML Model Predicting Traffic Possibility synced according to local time
+5. Verify ML traffic prediction uses local-hour context (frontend sends `traffic_hour_of_day`).
 
 ### 5-Minute Judge Validation Path
 
@@ -36,6 +36,7 @@ Multi-modal hyper-local routing engine that computes road-accurate routes around
 - Performance and scalability: [Section 11](#11-performance--scalability)
 - Full feature inventory for showcase: [Section 15](#15-hackathon-showcase-codebase-wide-feature-inventory)
 - CI/CD and deployment implementation: [Section 16](#16-cicd-and-deployment-implementation)
+- Dedicated feature showoff (ML-first): [Section 18](#18-dedicated-feature-showcase-judge-focused-ml-first)
 
 ### Important Scope Note for Judges
 
@@ -1233,3 +1234,55 @@ Notes:
 
 - The same codebase supports multiple backend hosting targets (Azure and Render) and a Vercel-hosted frontend.
 - For hackathon demos, backend target can be switched by frontend environment configuration without changing application logic.
+
+---
+
+## 18. Dedicated Feature Showcase (Judge-Focused, ML-First)
+
+### 18.1 Core Showoff Features
+
+- True multimodal routing with state-space Dijkstra (`node x mode`) rather than simple mode-by-mode stitching.
+- Real-time anomaly injection that updates graph edge weights and route behavior immediately.
+- Async traffic intelligence pipeline that keeps `/route` responsive and returns predictions later via `route_id`.
+- Road-geometry-faithful rendering with overlap-aware comparison of fastest vs shortest multimodal options.
+- Multi-platform live deployment (Vercel frontend + Azure/Render backend targets).
+
+### 18.2 ML Functionality Judges Can See Live
+
+- Frontend sends local-time context (`traffic_hour_of_day = new Date().getHours()`) in route requests.
+- Backend responds quickly with route geometry and `traffic_status: loading`.
+- `TrafficJamService` workers process route edges in background and update status to `ready`.
+- Response includes:
+  - `route_jam_chance_pct`
+  - `edges_analyzed`
+  - `heavy_edges`, `moderate_edges`, `low_edges`
+  - `confidence`
+- If prediction fails or ML endpoint is unavailable, route computation still succeeds (graceful degradation).
+
+### 18.3 ML Training Already Active in Runtime
+
+- Startup bootstraps ML traffic model from graph data via `TrafficJamService.initialize_from_graph(...)`.
+- Dataset generation covers every edge across all 24 hours and persists to DB/CSV.
+- Training uses `RandomForestClassifier` over engineered features:
+  - hour of day
+  - deterministic edge hash
+  - encoded road type
+  - road-length bucket
+- Model is used to classify edge jam levels and aggregate route-level jam probability.
+- Caching + retry logic improves stability and responsiveness under repeated queries.
+
+### 18.4 Edge-Time ML Microservice Path (Extensible Architecture)
+
+- Separate ML FastAPI microservice exposes `/health` and `/predict`.
+- Model registry supports save/load/version metadata for trained artifacts.
+- Current predictor includes fallback inference logic when no trained artifact is present.
+- `ml/preprocess.py` and `ml/train.py` define the training pipeline contract for production-grade model evolution.
+- This separation keeps routing API reliable while allowing independent ML iteration.
+
+### 18.5 Suggested Judge Script for Maximum Impact
+
+1. Compute a multimodal route and show segment-level vehicle colors.
+2. Inject a high-severity anomaly and recompute to show adaptation.
+3. Observe `/traffic/{route_id}` lifecycle from `loading` to `ready`.
+4. Highlight returned ML fields (`route_jam_chance_pct`, heavy/moderate/low distribution, confidence).
+5. Mention resilience behavior: route remains available even if ML prediction path degrades.
