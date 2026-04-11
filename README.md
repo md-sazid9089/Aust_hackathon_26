@@ -4,28 +4,13 @@ Multi-modal hyper-local routing engine that computes road-accurate routes around
 
 ## Judge Quick Read (2-3 Minutes)
 
-### Live Links
+### Quick Navigation
 
-- Main live domain: https://www.smartcommutebd.live/
-- Frontend (Vercel): https://aust-hackathon-26.vercel.app/
-- Backend (Azure): https://maploactor-eve5e0d5f5h0aqh8.southeastasia-01.azurewebsites.net/
-- Backend (Render): https://aust-hackathon-26.onrender.com/
-
-### What You Can Verify Quickly
-
-1. Compute a route and confirm road-following geometry.
-2. Add an anomaly and verify route adaptation.
-3. Confirm async traffic lifecycle (`loading -> ready`) from `route_id` polling.
-4. Compare multimodal fastest vs shortest route options in UI.
-5. Verify ML traffic prediction uses local-hour context (frontend sends `traffic_hour_of_day`).
-
-### 5-Minute Judge Validation Path
-
-1. Open the live frontend and select origin/destination.
-2. Run single-mode route, then multimodal route.
-3. Inject an anomaly from the map and recompute.
-4. Observe traffic prediction status update.
-5. Optionally call `/health` and `/route` using commands in [Section 8](#8-execution-steps).
+- Live URLs: [Section 16](#16-live-deployments-and-public-domains)
+- Judge demo steps: [Section 17](#17-suggested-judge-demo-flow)
+- ML-first feature showcase: [Section 14](#14-dedicated-feature-showcase-judge-focused-ml-first)
+- API contracts and payloads: [Section 6](#6-api-documentation)
+- Setup and run instructions: [Section 7](#7-setup-instructions-very-important), [Section 8](#8-execution-steps)
 
 ### Evidence Map (Where to Read What)
 
@@ -34,9 +19,8 @@ Multi-modal hyper-local routing engine that computes road-accurate routes around
 - Setup and execution: [Section 7](#7-setup-instructions-very-important), [Section 8](#8-execution-steps)
 - Design decisions and assumptions: [Section 9](#9-design-decisions), [Section 10](#10-assumptions)
 - Performance and scalability: [Section 11](#11-performance--scalability)
-- Full feature inventory for showcase: [Section 15](#15-hackathon-showcase-codebase-wide-feature-inventory)
-- CI/CD and deployment implementation: [Section 16](#16-cicd-and-deployment-implementation)
-- Dedicated feature showoff (ML-first): [Section 18](#18-dedicated-feature-showcase-judge-focused-ml-first)
+- Full feature inventory for showcase: [Section 14](#14-dedicated-feature-showcase-judge-focused-ml-first)
+- CI/CD and deployment implementation: [Section 15](#15-cicd-and-deployment-implementation)
 
 ### Important Scope Note for Judges
 
@@ -242,45 +226,12 @@ Why this design:
 
 ## 5. Features
 
-### Routing & Graph Intelligence
+This section is intentionally concise to avoid repeating details already documented in the dedicated showcase.
 
-- Single-modal route computation (`car`, `bike`, `walk`, `rickshaw`, `transit`).
-- Multi-modal state-space Dijkstra with mode switch penalties.
-- Road-geometry-respecting route rendering (no straight-line fake paths when graph path exists).
-- Fallback route generation if graph path is unavailable.
-
-### Dynamic Weighting & Anomaly Handling
-
-- Real-time anomaly ingestion.
-- Severity-driven edge weight multiplication.
-- Optional mode disabling on affected edges.
-- Automatic expiry and reconciliation of active anomaly effects.
-
-### API Platform
-
-- RESTful backend endpoints for routing, anomalies, graph snapshots, and traffic status.
-- V2 endpoints for node-ID and coordinate-based multimodal routing.
-
-### Async Traffic Processing
-
-- Background queue + workers + retries for route traffic risk prediction.
-- Non-blocking route response with later status retrieval via `route_id`.
-
-### Visualization Layer
-
-- Interactive Leaflet map with draggable origin/destination.
-- Multimodal fastest vs shortest comparison view.
-- Segment-level vehicle color rendering.
-- Vehicle color legend and route selection UX.
-- Graph node overlays filtered by selected mode.
-- Anomaly edge highlighting and bbox targeting.
-
-### ML Integration (Core Hackathon Highlight)
-
-- Dedicated ML FastAPI service predicts edge traversal times and route-level jam risk.
-- Queue + worker architecture keeps route API latency low under load.
-- Route lifecycle status (`loading` -> `ready`/`failed`) is exposed via `route_id`.
-- Graceful fallback keeps the system judge-demo ready even if the ML service is unavailable.
+- Full feature showcase (single source of truth): [Section 14](#14-dedicated-feature-showcase-judge-focused-ml-first)
+- Routing and anomalies: [Section 14.1](#141-routing-intelligence), [Section 14.2](#142-real-time-incident-and-dynamic-reweighting)
+- ML prediction and training functionality: [Section 14.3](#143-async-traffic-and-ml-augmented-pipeline), [Section 14.7](#147-ml-functionality-judges-can-see-live), [Section 14.8](#148-ml-training-already-active-in-runtime)
+- API endpoint surface: [Section 14.5](#145-api-surface-implemented-in-code)
 
 ---
 
@@ -1093,30 +1044,9 @@ Aust_hackathon_26/
 
 ---
 
-## 14. Credits / Team
+## 14. Dedicated Feature Showcase (Judge-Focused, ML-First)
 
-### TEAM NULL
-
-- Md Tayeb Ibne Sayed
-- MD Sazid
-- Shajedul Kabir Rafi
-
----
-
-### Suggested Judge Demo Flow
-
-1. Open frontend map.
-2. Set origin and destination.
-3. Compute single-mode and multimodal routes.
-4. Inject anomaly on selected edge or bbox.
-5. Recompute and compare route adaptation.
-6. Observe asynchronous traffic status transitions (`loading -> ready`).
-
----
-
-## 15. Hackathon Showcase: Codebase-Wide Feature Inventory
-
-### 15.1 Routing Intelligence
+### 14.1 Routing Intelligence
 
 - OSM-based graph extraction around AUST and normalization into an in-memory NetworkX MultiDiGraph.
 - Single-modal and multi-modal routing from the same graph source.
@@ -1126,7 +1056,7 @@ Aust_hackathon_26/
 - Geometry-preserving route rendering (road-following coordinates, no synthetic straight-line jumps when graph path exists).
 - Coordinate-to-graph snapping support (nearest-node and nearest-edge fallback in v2 coordinate routing).
 
-### 15.2 Real-Time Incident and Dynamic Reweighting
+### 14.2 Real-Time Incident and Dynamic Reweighting
 
 - Live anomaly ingestion with severity (`low`, `medium`, `high`, `critical`).
 - Edge targeting by direct edge IDs or by map-selected bounding box (frontend-assisted targeting).
@@ -1134,7 +1064,7 @@ Aust_hackathon_26/
 - Active anomaly lifecycle management (list, clear, expiry reconciliation).
 - Graph version tracking so new route computations adapt immediately after anomaly updates.
 
-### 15.3 Async Traffic and ML-Augmented Pipeline
+### 14.3 Async Traffic and ML-Augmented Pipeline
 
 - Route response returns immediately with `route_id`.
 - Non-blocking traffic prediction pipeline with internal queue, worker pool, and retry with backoff.
@@ -1143,7 +1073,7 @@ Aust_hackathon_26/
 - ML prediction microservice endpoint integration (`/predict`) and graceful fallback behavior when ML is unavailable.
 - Service-level dataset generation/training utilities for traffic model bootstrapping.
 
-### 15.4 Frontend Demo UX Capabilities
+### 14.4 Frontend Demo UX Capabilities
 
 - Health-aware landing page with engine status indicator.
 - Full-screen interactive map planner.
@@ -1156,7 +1086,7 @@ Aust_hackathon_26/
 - Progressive traffic status UX (`loading -> ready/failed`) tied to backend polling.
 - Graph overlay visualization support (nodes/edges snapshot rendering paths).
 
-### 15.5 API Surface Implemented in Code
+### 14.5 API Surface Implemented in Code
 
 - Core: `GET /health`, `POST /route`, `GET /traffic/{route_id}`
 - Anomalies: `POST /anomaly`, `GET /anomaly`, `DELETE /anomaly`
@@ -1164,7 +1094,7 @@ Aust_hackathon_26/
 - V2 engine: `POST /v2/route`, `POST /v2/route/coords`, `POST /v2/anomaly`, `GET /v2/graph/snapshot`, `GET /v2/graph/validate`
 - Auth module exists in code (`/auth/register`, `/auth/login`) but is not part of the current hackathon judge flow.
 
-### 15.6 Data, Caching, and Reliability Primitives
+### 14.6 Data, Caching, and Reliability Primitives
 
 - MySQL persistence for road traffic observation records.
 - Redis integration for runtime caching support.
@@ -1172,11 +1102,51 @@ Aust_hackathon_26/
 - Automated startup initialization pipeline (DB table ensure, graph load, traffic service bootstrap, worker start).
 - Test suite coverage across routing, anomaly, graph, and multimodal logic (`backend/tests`).
 
+### 14.7 ML Functionality Judges Can See Live
+
+- Frontend sends local-time context (`traffic_hour_of_day = new Date().getHours()`) in route requests.
+- Backend responds quickly with route geometry and `traffic_status: loading`.
+- `TrafficJamService` workers process route edges in background and update status to `ready`.
+- Response includes:
+  - `route_jam_chance_pct`
+  - `edges_analyzed`
+  - `heavy_edges`, `moderate_edges`, `low_edges`
+  - `confidence`
+- If prediction fails or ML endpoint is unavailable, route computation still succeeds (graceful degradation).
+
+### 14.8 ML Training Already Active in Runtime
+
+- Startup bootstraps ML traffic model from graph data via `TrafficJamService.initialize_from_graph(...)`.
+- Dataset generation covers every edge across all 24 hours and persists to DB/CSV.
+- Training uses `RandomForestClassifier` over engineered features:
+  - hour of day
+  - deterministic edge hash
+  - encoded road type
+  - road-length bucket
+- Model is used to classify edge jam levels and aggregate route-level jam probability.
+- Caching + retry logic improves stability and responsiveness under repeated queries.
+
+### 14.9 Edge-Time ML Microservice Path (Extensible Architecture)
+
+- Separate ML FastAPI microservice exposes `/health` and `/predict`.
+- Model registry supports save/load/version metadata for trained artifacts.
+- Current predictor includes fallback inference logic when no trained artifact is present.
+- `ml/preprocess.py` and `ml/train.py` define the training pipeline contract for production-grade model evolution.
+- This separation keeps routing API reliable while allowing independent ML iteration.
+
+### 14.10 Suggested Judge Script for Maximum Impact
+
+1. Compute a multimodal route and show segment-level vehicle colors.
+2. Inject a high-severity anomaly and recompute to show adaptation.
+3. Observe `/traffic/{route_id}` lifecycle from `loading` to `ready`.
+4. Highlight returned ML fields (`route_jam_chance_pct`, heavy/moderate/low distribution, confidence).
+5. Mention resilience behavior: route remains available even if ML prediction path degrades.
+
 ---
 
-## 16. CI/CD and Deployment Implementation
+## 15. CI/CD and Deployment Implementation
 
-### 16.1 Continuous Integration (`.github/workflows/ci.yml`)
+### 15.1 Continuous Integration (`.github/workflows/ci.yml`)
 
 - Triggered on push to `dev` and on pull requests.
 - Backend test job:
@@ -1189,7 +1159,7 @@ Aust_hackathon_26/
 - Docker validation job:
   - `docker compose config` structural validation
 
-### 16.2 Continuous Delivery (`.github/workflows/cd.yml`)
+### 15.2 Continuous Delivery (`.github/workflows/cd.yml`)
 
 - Triggered on push to `dev`, PRs targeting `dev`, and manual dispatch.
 - Container publication pipeline (non-PR):
@@ -1203,19 +1173,19 @@ Aust_hackathon_26/
   - builds preview artifact
   - deploys preview and publishes preview URL into workflow summary
 
-### 16.3 Azure Deployment Workflow (`.github/workflows/dev_maploactor.yml`)
+### 15.3 Azure Deployment Workflow (`.github/workflows/dev_maploactor.yml`)
 
 - Separate Azure-focused pipeline configured for the `maploactor` Azure Web App.
 - Triggered on push to `dev` and manual dispatch.
 - Uploads build artifact and deploys via `azure/webapps-deploy`.
 
-### 16.4 Render Deployment Path
+### 15.4 Render Deployment Path
 
 - `render.yaml` defines backend service, health checks, auto-deploy, persistent disk for OSM cache, and environment wiring.
 - `backend/render-build.sh` performs dependency installation and import verification.
 - `backend/render-start.sh` validates config and starts Uvicorn with Render-ready settings.
 
-### 16.5 Containerized Runtime Strategy
+### 15.5 Containerized Runtime Strategy
 
 - `docker-compose.yml` orchestrates local/dev stack: backend, frontend, ML, MySQL, Redis.
 - `docker-compose.prod.yml` applies production overrides (worker count, resource limits, production frontend image target).
@@ -1223,7 +1193,7 @@ Aust_hackathon_26/
 
 ---
 
-## 17. Live Deployments and Public Domains
+## 16. Live Deployments and Public Domains
 
 - Frontend (Vercel): https://aust-hackathon-26.vercel.app/
 - Backend (Azure App Service): https://maploactor-eve5e0d5f5h0aqh8.southeastasia-01.azurewebsites.net/
@@ -1237,52 +1207,21 @@ Notes:
 
 ---
 
-## 18. Dedicated Feature Showcase (Judge-Focused, ML-First)
+## 17. Suggested Judge Demo Flow
 
-### 18.1 Core Showoff Features
+1. Open frontend map.
+2. Set origin and destination.
+3. Compute single-mode and multimodal routes.
+4. Inject anomaly on selected edge or bbox.
+5. Recompute and compare route adaptation.
+6. Observe asynchronous traffic status transitions (`loading -> ready`).
 
-- True multimodal routing with state-space Dijkstra (`node x mode`) rather than simple mode-by-mode stitching.
-- Real-time anomaly injection that updates graph edge weights and route behavior immediately.
-- Async traffic intelligence pipeline that keeps `/route` responsive and returns predictions later via `route_id`.
-- Road-geometry-faithful rendering with overlap-aware comparison of fastest vs shortest multimodal options.
-- Multi-platform live deployment (Vercel frontend + Azure/Render backend targets).
+---
 
-### 18.2 ML Functionality Judges Can See Live
+## 18. Credits / Team
 
-- Frontend sends local-time context (`traffic_hour_of_day = new Date().getHours()`) in route requests.
-- Backend responds quickly with route geometry and `traffic_status: loading`.
-- `TrafficJamService` workers process route edges in background and update status to `ready`.
-- Response includes:
-  - `route_jam_chance_pct`
-  - `edges_analyzed`
-  - `heavy_edges`, `moderate_edges`, `low_edges`
-  - `confidence`
-- If prediction fails or ML endpoint is unavailable, route computation still succeeds (graceful degradation).
+### TEAM NULL
 
-### 18.3 ML Training Already Active in Runtime
-
-- Startup bootstraps ML traffic model from graph data via `TrafficJamService.initialize_from_graph(...)`.
-- Dataset generation covers every edge across all 24 hours and persists to DB/CSV.
-- Training uses `RandomForestClassifier` over engineered features:
-  - hour of day
-  - deterministic edge hash
-  - encoded road type
-  - road-length bucket
-- Model is used to classify edge jam levels and aggregate route-level jam probability.
-- Caching + retry logic improves stability and responsiveness under repeated queries.
-
-### 18.4 Edge-Time ML Microservice Path (Extensible Architecture)
-
-- Separate ML FastAPI microservice exposes `/health` and `/predict`.
-- Model registry supports save/load/version metadata for trained artifacts.
-- Current predictor includes fallback inference logic when no trained artifact is present.
-- `ml/preprocess.py` and `ml/train.py` define the training pipeline contract for production-grade model evolution.
-- This separation keeps routing API reliable while allowing independent ML iteration.
-
-### 18.5 Suggested Judge Script for Maximum Impact
-
-1. Compute a multimodal route and show segment-level vehicle colors.
-2. Inject a high-severity anomaly and recompute to show adaptation.
-3. Observe `/traffic/{route_id}` lifecycle from `loading` to `ready`.
-4. Highlight returned ML fields (`route_jam_chance_pct`, heavy/moderate/low distribution, confidence).
-5. Mention resilience behavior: route remains available even if ML prediction path degrades.
+- Md Tayeb Ibne Sayed
+- MD Sazid
+- Shajedul Kabir Rafi
