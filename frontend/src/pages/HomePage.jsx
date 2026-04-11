@@ -12,28 +12,31 @@
  *   - Calls onNavigateToMap() to switch to the routing interface
  */
 
+import ControlCard from '../components/ControlCard';
+import { Navigation, AlertTriangle, TrendingUp, Database } from 'lucide-react';
+
 function HomePage({ onNavigateToMap, apiStatus }) {
   const features = [
     {
-      icon: '⬡',
+      IconComponent: Navigation,
       title: 'Multi-Modal Routing',
       description: 'Combine car, bike, walk, and transit for optimal multi-leg journeys with configurable switch penalties.',
       accent: '#38bdf8',
     },
     {
-      icon: '⚡',
+      IconComponent: AlertTriangle,
       title: 'Real-Time Anomalies',
       description: 'Ingest accidents, closures, and weather events. Routes dynamically adjust with severity-based weight multipliers.',
       accent: '#f97316',
     },
     {
-      icon: '◈',
+      IconComponent: TrendingUp,
       title: 'ML Congestion Prediction',
       description: 'Machine learning predicts edge traversal times using historical patterns, time-of-day, and road characteristics.',
       accent: '#14b8a6',
     },
     {
-      icon: '▦',
+      IconComponent: Database,
       title: 'Graph Snapshots',
       description: 'Export the current road graph state for debugging, visualization, and integration testing.',
       accent: '#a78bfa',
@@ -139,6 +142,58 @@ function HomePage({ onNavigateToMap, apiStatus }) {
             <circle cx="300" cy="180" r="8" />
           </g>
         </svg>
+
+        {/* Loader animations - multiple loaders */}
+        {/* Center loader */}
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 0,
+          opacity: 0.4,
+        }}>
+          <div className="loader-shape-3" />
+        </div>
+
+        {/* Top-left loader */}
+        <div style={{
+          position: 'absolute',
+          top: '35%',
+          left: '35%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 0,
+          opacity: 0.15,
+          animationDelay: '0.2s',
+        }}>
+          <div className="loader-shape-3" style={{ animationDelay: '0.2s' }} />
+        </div>
+
+        {/* Top-right loader */}
+        <div style={{
+          position: 'absolute',
+          top: '35%',
+          right: '15%',
+          transform: 'translate(50%, -50%)',
+          zIndex: 0,
+          opacity: 0.15,
+          animationDelay: '0.4s',
+        }}>
+          <div className="loader-shape-3" style={{ animationDelay: '0.4s' }} />
+        </div>
+
+        {/* Bottom loader */}
+        <div style={{
+          position: 'absolute',
+          bottom: '20%',
+          left: '50%',
+          transform: 'translate(-50%, 50%)',
+          zIndex: 0,
+          opacity: 0.2,
+          animationDelay: '0.6s',
+        }}>
+          <div className="loader-shape-3" style={{ animationDelay: '0.6s' }} />
+        </div>
 
         <div style={{ position: 'relative', maxWidth: 780, width: '100%', textAlign: 'center', zIndex: 1 }}>
           {/* Tag pill */}
@@ -253,34 +308,204 @@ function HomePage({ onNavigateToMap, apiStatus }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
             {features.map((feature, idx) => (
-              <div
+              <ControlCard
                 key={idx}
-                className="sys-card animate-slide-up"
-                style={{ padding: 28, animationDelay: `${idx * 80}ms` }}
-              >
-                {/* Icon */}
-                <div style={{
-                  width: 44, height: 44, borderRadius: 12,
-                  background: `${feature.accent}18`,
-                  border: `1px solid ${feature.accent}30`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 20, color: feature.accent, marginBottom: 18,
-                  fontWeight: 700,
-                }}>
-                  {feature.icon}
+                IconComponent={feature.IconComponent}
+                title={feature.title}
+                description={feature.description}
+                accent={feature.accent}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ Subscription Plans Section ═══════════════════════ */}
+      <section style={{ padding: '80px 24px' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+          {/* Section header */}
+          <div style={{ textAlign: 'center', marginBottom: 60 }}>
+            <div className="section-label" style={{ marginBottom: 12 }}>PRICING PLANS</div>
+            <h2 style={{ fontSize: 'clamp(32px, 5vw, 48px)', fontWeight: 700, color: '#fff', margin: '0 0 16px', letterSpacing: '-0.02em' }}>
+              Choose Your Plan
+            </h2>
+            <p style={{ fontSize: 16, color: 'var(--text-secondary)', maxWidth: 500, margin: '0 auto', lineHeight: 1.6 }}>
+              Flexible pricing designed for businesses of all sizes. Scale as you grow.
+            </p>
+          </div>
+
+          {/* Subscription cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 32, maxWidth: 1000, margin: '0 auto' }}>
+            
+            {/* Starter Plan */}
+            <div style={{
+              background: 'linear-gradient(135deg, #0ea5e9, #38bdf8)',
+              padding: '2px',
+              borderRadius: 24,
+              display: 'flex',
+              flexDirection: 'column',
+            }}>
+              <div style={{
+                width: '100%',
+                height: '100%',
+                background: 'var(--bg-surface)',
+                borderRadius: '22px',
+                padding: '28px 24px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 20,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Starter</span>
+                </div>
+                
+                <div>
+                  <h3 style={{ fontSize: 20, fontWeight: 600, color: '#fff', margin: 0 }}>Starter</h3>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>For small teams</p>
                 </div>
 
-                <h4 style={{ fontSize: 16, fontWeight: 600, color: '#fff', margin: '0 0 8px', letterSpacing: '-0.01em' }}>
-                  {feature.title}
-                </h4>
-                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65, margin: '0 0 20px' }}>
-                  {feature.description}
-                </p>
+                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
+                  <div style={{ fontSize: 32, fontWeight: 700, color: '#fff' }}>$29<span style={{ fontSize: 14, color: 'var(--text-muted)' }}>/mo</span></div>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '8px 0 0' }}>Billed monthly</p>
+                </div>
 
-                {/* Arrow indicator */}
-                <div style={{ fontSize: 18, color: feature.accent, fontWeight: 700 }}>→</div>
+                <button style={{
+                  background: 'linear-gradient(135deg, #0ea5e9, #38bdf8)',
+                  padding: '10px 16px',
+                  border: 'none',
+                  borderRadius: 8,
+                  color: '#fff',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                }}>
+                  Get Started
+                </button>
+
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, gap: 12, display: 'flex', flexDirection: 'column', fontSize: 12, color: 'var(--text-secondary)' }}>
+                  <li>✓ Up to 100 routes/day</li>
+                  <li>✓ Real-time traffic updates</li>
+                  <li>✓ Basic support</li>
+                  <li>✗ Advanced analytics</li>
+                </ul>
               </div>
-            ))}
+            </div>
+
+            {/* Professional Plan (most popular) */}
+            <div style={{
+              background: 'linear-gradient(135deg, #14b8a6, #38bdf8)',
+              padding: '2px',
+              borderRadius: 24,
+              display: 'flex',
+              flexDirection: 'column',
+              transform: 'scale(1.05)',
+            }}>
+              <div style={{
+                width: '100%',
+                height: '100%',
+                background: 'var(--bg-surface)',
+                borderRadius: '22px',
+                padding: '28px 24px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 20,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#14b8a6', textTransform: 'uppercase', letterSpacing: '0.08em' }}>MOST POPULAR</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width={20} height={20} viewBox="0 0 24 24" fill="#14b8a6">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                  </svg>
+                </div>
+                
+                <div>
+                  <h3 style={{ fontSize: 20, fontWeight: 600, color: '#fff', margin: 0 }}>Professional</h3>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>For growing startups</p>
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
+                  <div style={{ fontSize: 32, fontWeight: 700, color: '#fff' }}>$98<span style={{ fontSize: 14, color: 'var(--text-muted)' }}>/mo</span></div>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '8px 0 0' }}>Billed monthly</p>
+                </div>
+
+                <button style={{
+                  background: 'linear-gradient(135deg, #14b8a6, #38bdf8)',
+                  padding: '10px 16px',
+                  border: 'none',
+                  borderRadius: 8,
+                  color: '#fff',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                  boxShadow: '0 4px 16px rgba(20, 184, 166, 0.3)',
+                }}>
+                  Get Started
+                </button>
+
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, gap: 12, display: 'flex', flexDirection: 'column', fontSize: 12, color: 'var(--text-secondary)' }}>
+                  <li>✓ Up to 1,000 routes/day</li>
+                  <li>✓ Real-time anomaly detection</li>
+                  <li>✓ Priority support</li>
+                  <li>✓ Advanced analytics</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Enterprise Plan */}
+            <div style={{
+              background: 'linear-gradient(135deg, #38bdf8, #a78bfa)',
+              padding: '2px',
+              borderRadius: 24,
+              display: 'flex',
+              flexDirection: 'column',
+            }}>
+              <div style={{
+                width: '100%',
+                height: '100%',
+                background: 'var(--bg-surface)',
+                borderRadius: '22px',
+                padding: '28px 24px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 20,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Enterprise</span>
+                </div>
+                
+                <div>
+                  <h3 style={{ fontSize: 20, fontWeight: 600, color: '#fff', margin: 0 }}>Enterprise</h3>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>For large organizations</p>
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
+                  <div style={{ fontSize: 32, fontWeight: 700, color: '#fff' }}>Custom<span style={{ fontSize: 14, color: 'var(--text-muted)' }}>pricing</span></div>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '8px 0 0' }}>Contact for details</p>
+                </div>
+
+                <button style={{
+                  background: 'linear-gradient(135deg, #38bdf8, #a78bfa)',
+                  padding: '10px 16px',
+                  border: 'none',
+                  borderRadius: 8,
+                  color: '#fff',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                }}>
+                  Contact Sales
+                </button>
+
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, gap: 12, display: 'flex', flexDirection: 'column', fontSize: 12, color: 'var(--text-secondary)' }}>
+                  <li>✓ Unlimited routes</li>
+                  <li>✓ ML-powered predictions</li>
+                  <li>✓ 24/7 dedicated support</li>
+                  <li>✓ Custom integrations</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
       </section>
