@@ -12,6 +12,8 @@ setup-local.sh               # Local setup helper
 test-render-readiness.sh     # Pre-deployment validation
 RENDER_DEPLOYMENT_GUIDE.md   # Comprehensive documentation
 RENDER_DEPLOYMENT_SUMMARY.md # Implementation summary
+RENDER_PORT_TROUBLESHOOTING.md # Fix for port detection issues
+RENDER_QUICK_REFERENCE.md    # This file
 ```
 
 ## 🚀 Quick Start
@@ -26,6 +28,9 @@ bash setup-local.sh
 
 # 3. Start the backend (from within setup-local.sh or manually)
 cd backend && bash render-start.sh
+
+# 4. Test the health endpoint in another terminal
+curl http://localhost:8000/health
 ```
 
 ### Deploy to Render
@@ -216,6 +221,28 @@ python3 -c "import json; print(json.load(open('config.json')))"
 
 # Check imports
 python3 -c "import fastapi, uvicorn, networkx; print('OK')"
+```
+
+## 🚨 Port Detection Issues (No open ports detected)
+
+**Problem:** Render can't detect your application port
+**Cause:** Multi-worker setup, missing health check, or startup issues
+**Solution:** See [RENDER_PORT_TROUBLESHOOTING.md](./RENDER_PORT_TROUBLESHOOTING.md)
+
+**Quick fix checklist:**
+- ✅ Using `--workers 1` (not 4 or more)
+- ✅ Health check endpoint `/health` exists
+- ✅ `PORT` environment variable is set
+- ✅ Using `--host 0.0.0.0` (not localhost)
+- ✅ `healthCheckTimeout: 30` in render.yaml
+- ✅ `PYTHONUNBUFFERED=1` is set
+- ✅ No `--loop uvloop` on Render (remove if issues)
+
+**Test locally first:**
+```bash
+cd backend && bash render-start.sh
+# In another terminal:
+curl http://localhost:8000/health
 ```
 
 ---

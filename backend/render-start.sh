@@ -162,16 +162,40 @@ echo "FastAPI will be available at:"
 echo "  - API: http://0.0.0.0:$PORT"
 echo "  - Docs: http://0.0.0.0:$PORT/docs"
 echo "  - ReDoc: http://0.0.0.0:$PORT/redoc"
+echo "  - Health: http://0.0.0.0:$PORT/health"
 echo ""
-echo "Press Ctrl+C to stop"
+echo "Port binding: 0.0.0.0:$PORT"
+echo "Environment: Production"
+echo "Workers: 1 (Render manages scaling)"
+echo ""
 echo "=========================================="
 echo ""
 
-# Start Uvicorn with optimized settings for production
+# Ensure PORT is set
+if [[ -z "$PORT" ]]; then
+    export PORT=8000
+    echo "[⚠] PORT not set, using default: 8000"
+fi
+
+# Start Uvicorn with Render-optimized settings
+# Note: Single worker on Render (Render handles load balancing and scaling)
+# uvloop is optional and can cause issues on some systems
+echo "[DEBUG] Starting Uvicorn with:"
+echo "  - Host: 0.0.0.0"
+echo "  - Port: $PORT"
+echo "  - Workers: 1"
+echo "  - App: main:app"
+echo ""
+echo "Initialization order:"
+echo "  1. Loading FastAPI app from main.py"
+echo "  2. Starting ASGI server"
+echo "  3. Binding to 0.0.0.0:$PORT"
+echo "  4. Ready to accept connections"
+echo ""
+
 exec uvicorn main:app \
     --host 0.0.0.0 \
     --port "$PORT" \
-    --workers 4 \
-    --loop uvloop \
+    --workers 1 \
     --log-level info \
     --access-log

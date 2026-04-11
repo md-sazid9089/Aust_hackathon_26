@@ -12,9 +12,11 @@ services:
     # Environment variables (set these in Render dashboard for sensitive values)
     envVars:
       - key: PORT
-        value: 8000
+        value: 8000  # Will be overridden by Render's $PORT if needed
       - key: PYTHONUNBUFFERED
         value: 1
+      - key: RENDER
+        value: true
       # Database - set these in Render dashboard
       # - key: DATABASE_URL
       #   fromDatabase:
@@ -27,8 +29,12 @@ services:
     
     # Health check
     healthCheckPath: /health
+    healthCheckTimeout: 30  # Allow more time for startup
     
-    # Autoscale (optional)
+    # Auto-restart on failure
+    autoDeploy: true
+    
+    # Autoscale (optional - disable for hackathon to save costs)
     autoscaling:
       enabled: false
       minInstances: 1
