@@ -34,6 +34,43 @@ function MapPage({ apiStatus }) {
   const [isAnomalyPanelCollapsed, setIsAnomalyPanelCollapsed] = useState(true);
   const [lastRouteOptions, setLastRouteOptions] = useState({ includeMultimodal: false });
 
+  const dualRoute = (() => {
+    const suggestions = Array.isArray(routeResult?.multimodal_suggestions)
+      ? routeResult.multimodal_suggestions
+      : [];
+
+    const normalizeRoute = (suggestion) => {
+      if (!suggestion) return null;
+      return {
+        total_distance: Number(suggestion.total_distance_m ?? suggestion.total_distance ?? 0),
+        total_time: Number(suggestion.total_duration_s ?? suggestion.total_time ?? 0),
+        segments: Array.isArray(suggestion.segments)
+          ? suggestion.segments.map((segment) => ({
+              mode: segment.mode || segment.recommended_vehicle || 'walk',
+              recommended_vehicle: segment.recommended_vehicle || segment.mode || 'walk',
+              geometry: Array.isArray(segment.geometry)
+                ? segment.geometry
+                : Array.isArray(segment.coordinates)
+                  ? segment.coordinates.map(([lat, lng]) => ({ lat, lng }))
+                  : [],
+              distance_m: Number(segment.distance_m ?? 0),
+              travel_time_s: Number(segment.travel_time_s ?? segment.duration_s ?? 0),
+            }))
+          : [],
+      };
+    };
+
+    const fastest = suggestions.find((item) => item.strategy === 'fastest_time') || suggestions[0] || null;
+    const shortest = suggestions.find((item) => item.strategy === 'shortest_distance') || suggestions[1] || suggestions[0] || null;
+
+    if (!fastest && !shortest) return null;
+
+    return {
+      min_time_route: normalizeRoute(fastest),
+      min_distance_route: normalizeRoute(shortest),
+    };
+  })();
+
   useEffect(() => {
     let isMounted = true;
     const loadGraphNodes = async () => {
@@ -321,6 +358,7 @@ function MapPage({ apiStatus }) {
           origin={origin}
           destination={destination}
           routeResult={routeResult}
+          dualRoute={dualRoute}
           routeMode={routeMode}
           selectedMode={modes?.[0] || 'car'}
           graphNodes={graphNodes}
@@ -393,6 +431,7 @@ function MapPage({ apiStatus }) {
             origin={origin}
             destination={destination}
             routeResult={routeResult}
+            dualRoute={dualRoute}
             routeMode={routeMode}
             isLoading={isLoading}
             error={error}
