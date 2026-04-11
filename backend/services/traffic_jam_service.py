@@ -507,7 +507,9 @@ class TrafficJamService:
                     self._enqueue_job_locked(route_id)
             else:
                 try:
-                    data = self.predict_route_jam(compact_contexts, hour_of_day=hour_of_day)
+                    data = self.predict_route_jam(
+                        compact_contexts, hour_of_day=hour_of_day
+                    )
                     with self._state_lock:
                         job = self._route_predictions.get(route_id)
                         if job is not None:
@@ -598,7 +600,11 @@ class TrafficJamService:
             if not edge_contexts:
                 return None
 
-            if self._model is None and self._enable_model and self._csv_path is not None:
+            if (
+                self._model is None
+                and self._enable_model
+                and self._csv_path is not None
+            ):
                 self._train_from_csv(self._csv_path)
                 self._load_jam_lookup_from_csv(self._csv_path)
 
@@ -640,7 +646,9 @@ class TrafficJamService:
                     jam_level = self._dummy_level(edge_id, road_type, hour)
 
                 if model is None:
-                    edge_jam_prob = {1: 0.20, 2: 0.58, 3: 0.90}.get(int(jam_level), 0.50)
+                    edge_jam_prob = {1: 0.20, 2: 0.58, 3: 0.90}.get(
+                        int(jam_level), 0.50
+                    )
                     self._edge_prediction_cache[cache_key] = (
                         float(edge_jam_prob),
                         int(jam_level),

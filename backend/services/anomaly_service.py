@@ -685,7 +685,9 @@ class AnomalyService:
                 if graph.has_edge(source, target):
                     self._edge_resolve_cache[edge_id] = (source, target)
                     if len(self._edge_resolve_cache) > self._edge_resolve_cache_max:
-                        self._edge_resolve_cache.pop(next(iter(self._edge_resolve_cache)))
+                        self._edge_resolve_cache.pop(
+                            next(iter(self._edge_resolve_cache))
+                        )
                     return source, target
 
         self._edge_resolve_cache[edge_id] = None

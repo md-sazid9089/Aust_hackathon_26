@@ -191,7 +191,9 @@ class RoutingEngine:
         travel_time = float(
             edge_data.get(f"{mode}_travel_time") or edge_data.get("travel_time") or 0.0
         )
-        cost_per_km = float(settings.vehicle_types[mode].get("fuel_cost_per_km", 0.0) or 0.0)
+        cost_per_km = float(
+            settings.vehicle_types[mode].get("fuel_cost_per_km", 0.0) or 0.0
+        )
         monetary_cost = (length / 1000.0) * cost_per_km
 
         if optimize == "distance":
@@ -772,9 +774,7 @@ class RoutingEngine:
                 chosen_key = 0
             traffic_edges.append(
                 RouteTrafficEdge(
-                    edge_id=str(
-                        edge_data.get("_edge_id") or f"{u}->{v}:{chosen_key}"
-                    ),
+                    edge_id=str(edge_data.get("_edge_id") or f"{u}->{v}:{chosen_key}"),
                     road_type=self._road_type(edge_data),
                     length_m=float(edge_data.get("length") or 0.0),
                 )

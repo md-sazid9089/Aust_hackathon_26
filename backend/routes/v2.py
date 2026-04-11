@@ -42,6 +42,7 @@ def _require_graph_loaded():
 
 class RouteV2Request(BaseModel):
     """Spec-matching route request."""
+
     source: int = Field(..., description="Source node ID (OSM node)")
     destination: int = Field(..., description="Destination node ID (OSM node)")
     allowed_modes: list[str] = Field(
@@ -57,6 +58,7 @@ class RouteV2Request(BaseModel):
 
 class RouteV2FromCoordsRequest(BaseModel):
     """Coordinate-based route request (finds nearest nodes)."""
+
     source_lat: float = Field(..., ge=-90, le=90)
     source_lng: float = Field(..., ge=-180, le=180)
     dest_lat: float = Field(..., ge=-90, le=90)
@@ -74,6 +76,7 @@ class RouteV2FromCoordsRequest(BaseModel):
 
 class AnomalyV2Request(BaseModel):
     """Spec-matching anomaly request with direct edge references."""
+
     affected_edges: list[list] = Field(
         ...,
         description="List of [source, target] edge pairs",
@@ -163,7 +166,9 @@ def route_v2_coords(request: RouteV2FromCoordsRequest):
     dest_snap_info = None
 
     if source_node is None or source_dist > SNAP_THRESHOLD_M:
-        snap = graph_service.snap_to_nearest_edge(request.source_lat, request.source_lng)
+        snap = graph_service.snap_to_nearest_edge(
+            request.source_lat, request.source_lng
+        )
         if snap:
             source_node = snap["snap_node"]
             source_dist = snap["distance_m"]
@@ -314,7 +319,9 @@ def snapshot_v2(
                     edge_entry["base_weight"] = data.get("base_weight", 0)
                     edge_entry["weights"] = data.get("weights", {})
                     edge_entry["constraints"] = data.get("constraints", {})
-                    edge_entry["anomaly_multiplier"] = data.get("anomaly_multiplier", 1.0)
+                    edge_entry["anomaly_multiplier"] = data.get(
+                        "anomaly_multiplier", 1.0
+                    )
                     edge_entry["road_type"] = data.get("road_type", "unknown")
                     edge_entry["length_m"] = data.get("length", 0)
 
@@ -392,9 +399,12 @@ def validate_graph():
 
     # Check connectivity
     import networkx as nx
+
     components = list(nx.weakly_connected_components(graph))
     stats["connected_components"] = len(components)
-    stats["largest_component_nodes"] = len(max(components, key=len)) if components else 0
+    stats["largest_component_nodes"] = (
+        len(max(components, key=len)) if components else 0
+    )
 
     valid = len(issues) == 0 and stats["negative_weight_edges"] == 0
     return {
@@ -418,9 +428,11 @@ def _build_coordinate_path(graph, node_path: list) -> list[dict]:
     coords = []
     for node_id in node_path:
         nd = graph.nodes.get(node_id, {})
-        coords.append({
-            "node_id": node_id,
-            "lat": float(nd.get("y", 0.0)),
-            "lng": float(nd.get("x", 0.0)),
-        })
+        coords.append(
+            {
+                "node_id": node_id,
+                "lat": float(nd.get("y", 0.0)),
+                "lng": float(nd.get("x", 0.0)),
+            }
+        )
     return coords
