@@ -11,6 +11,7 @@ All business logic lives in the `services/` layer — routes are thin
 wrappers that validate input, delegate to services, and return responses.
 """
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -24,6 +25,10 @@ from routes.v2 import router as v2_router
 from services.graph_service import graph_service
 from services.traffic_jam_service import traffic_jam_service
 
+# When TESTING=1 (or "true") is set, skip heavy startup work (OSM graph load,
+# ML model training) so the test suite runs fast and without network access.
+_TESTING = os.environ.get("TESTING", "").lower() in ("1", "true", "yes")
+
 
 # ─── Lifespan: load the road graph once at startup ───────────────
 @asynccontextmanager
@@ -31,20 +36,26 @@ async def lifespan(app: FastAPI):
     """
     On startup: 
       - Create database tables if they don't exist
-      - Load the OSM road graph into memory
+      - Load the OSM road graph into memory (skipped when TESTING=1)
     On shutdown: clean up resources.
     """
     print("[startup] Creating database tables...")
     Base.metadata.create_all(bind=engine)
     print("[startup] Database tables created/verified")
-    
-    print("[startup] Loading road graph...")
-    graph_service.load_graph()
-    print(f"[startup] Graph loaded — {graph_service.node_count()} nodes, {graph_service.edge_count()} edges")
 
-    print("[startup] Building dummy traffic dataset and training jam model...")
-    traffic_jam_service.initialize_from_graph(graph_service.get_graph())
-    print("[startup] Traffic jam model ready")
+    if _TESTING:
+        # Test-mode bypass: skip OSM graph loading and ML initialization to
+        # avoid real network calls and keep tests fast and deterministic.
+        print("[startup] TESTING mode — skipping graph load and ML initialization")
+    else:
+        print("[startup] Loading road graph...")
+        graph_service.load_graph()
+        print(f"[startup] Graph loaded — {graph_service.node_count()} nodes, {graph_service.edge_count()} edges")
+
+        print("[startup] Building dummy traffic dataset and training jam model...")
+        traffic_jam_service.initialize_from_graph(graph_service.get_graph())
+        print("[startup] Traffic jam model ready")
+
     yield
     print("[shutdown] Cleaning up resources...")
 

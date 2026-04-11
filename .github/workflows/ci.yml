@@ -29,6 +29,7 @@ jobs:
         env:
           CONFIG_PATH: ${{ github.workspace }}/config.json
           DATABASE_URL: "sqlite+pysqlite:///:memory:"
+          TESTING: "1"
         run: |
           cd backend
           python -m pytest tests -v
