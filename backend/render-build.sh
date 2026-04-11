@@ -116,7 +116,7 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
-# ─── Verify config.json exists ────────────────────────────────
+# ─── Verify and copy config.json ──────────────────────────────
 echo ""
 echo "[INFO] Checking configuration..."
 
@@ -126,7 +126,9 @@ if [[ ! -f "../config.json" ]]; then
     exit 1
 fi
 
-echo "[✓] config.json found"
+# Copy config.json to backend directory for Render deployment
+cp ../config.json ./config.json
+echo "[✓] config.json found and copied to backend directory"
 
 # ─── Summary ───────────────────────────────────────────────────
 echo ""
