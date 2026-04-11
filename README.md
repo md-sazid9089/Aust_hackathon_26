@@ -1,243 +1,264 @@
-# 🚀 GoliTransit — Multi-Modal Hyper-Local Routing Engine
+# GoliTransit
 
-> A hackathon project that delivers intelligent, multi-modal routing with real-time anomaly handling and ML-based congestion prediction.
+Multi-modal hyper-local routing engine that computes road-accurate routes around AUST, adapts to anomalies in real time, and uses a dedicated ML microservice for asynchronous route traffic risk prediction.
 
----
+## 1. Project Title
 
-## 📐 Architecture Overview
+### GoliTransit - AI-Powered Multi-Modal Urban Routing
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        FRONTEND (React + Leaflet)                   │
-│  ┌────────────┐  ┌─────────────┐  ┌──────────────┐  ┌───────────┐   │
-│  │  MapView   │  │ RoutePanel  │  │ AnomalyAlert │  │ModeSelect │   │
-│  └─────┬──────┘  └──────┬──────┘  └──────┬───────┘  └─────┬─────┘   │
-│        └────────────────┴────────────────┴────────────────┘         │
-│                              │ REST API                             │
-└──────────────────────────────┼──────────────────────────────────────┘
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     BACKEND (FastAPI)                               │
-│                                                                     │
-│  Routes:  /health  │  /route  │  /anomaly  │  /graph/snapshot       │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────┐       │
-│  │                    Services Layer                        │       │
-│  │  ┌────────────┐ ┌──────────────┐ ┌────────────────────┐  │       │
-│  │  │  Routing   │ │   Anomaly    │ │  ML Integration    │  │       │
-│  │  │  Engine    │ │   Service    │ │  (predict edges)   │  │       │
-│  │  └─────┬──────┘ └──────┬───────┘ └─────────┬───────────┘ │       │
-│  │        │               │                   │             │       │
-│  │  ┌─────▼───────────────▼───────────────────▼──────────┐  │       │
-│  │  │            Graph Service (NetworkX)                │  │       │
-│  │  │   OSM Import → Multi-Layer Road Graph → Weights    │  │       │
-│  │  └────────────────────────────────────────────────────┘  │       │
-│  └──────────────────────────────────────────────────────────┘       │
-└─────────────────────────────────────────────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                     ML MODULE (Isolated)                             │
-│  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌──────────────────┐    │
-│  │Preprocess│→ │  Train    │→ │  Model    │→ │  Predict API     │    │
-│  │  (OSM +  │  │(sklearn / │  │ Registry  │  │  (edge traversal │    │
-│  │ traffic) │  │ TF stubs) │  │           │  │   time weights)  │    │
-│  └──────────┘  └───────────┘  └───────────┘  └──────────────────┘    │
-└──────────────────────────────────────────────────────────────────────┘
-```
+GoliTransit is a full-stack intelligent routing system built for urban mobility scenarios where cars, rickshaws, bikes, walking, and transit need to coexist inside one routing workflow.
 
 ---
 
-## 🗂 Project Structure
+## 2. Problem Statement
 
-```
-GoliTransit/
-├── README.md                    # This file
-├── config.json                  # Global config: vehicle types, penalties, thresholds
-├── docker-compose.yml           # Orchestration for all services
-├── .gitignore
-│
-├── backend/                     # FastAPI backend
-│   ├── main.py                  # App entry point, mounts all routers
-│   ├── config.py                # Settings loader from config.json
-│   ├── requirements.txt
-│   ├── routes/                  # API route handlers (thin layer)
-│   │   ├── health.py            # GET /health
-│   │   ├── route.py             # POST /route
-│   │   ├── anomaly.py           # POST /anomaly, GET /anomaly
-│   │   └── graph.py             # GET /graph/snapshot
-│   ├── services/                # Core business logic
-│   │   ├── routing_engine.py    # Single-modal & multi-modal routing
-│   │   ├── graph_service.py     # OSM import, NetworkX graph management
-│   │   ├── anomaly_service.py   # Anomaly ingestion & dynamic rerouting
-│   │   └── ml_integration.py    # Calls ML module for predicted edge weights
-│   ├── models/                  # Pydantic request/response schemas
-│   │   ├── route_models.py
-│   │   ├── anomaly_models.py
-│   │   └── graph_models.py
-│   └── tests/                   # Unit & integration tests
-│       ├── test_routing.py
-│       ├── test_anomaly.py
-│       └── conftest.py
-│
-├── ml/                          # Isolated ML module
-│   ├── requirements.txt
-│   ├── preprocess.py            # Data cleaning & feature engineering
-│   ├── train.py                 # Model training pipeline
-│   ├── predict.py               # Inference API for edge traversal times
-│   ├── model_registry.py        # Load/save/version trained models
-│   ├── models/                  # Saved model artifacts (.pkl, .h5)
-│   └── data/                    # Raw/processed training data
-│
-├── frontend/                    # React + Leaflet + TailwindCSS
-│   ├── package.json
-│   ├── index.html
-│   ├── vite.config.js
-│   ├── tailwind.config.js
-│   ├── postcss.config.js
-│   └── src/
-│       ├── main.jsx
-│       ├── App.jsx
-│       ├── index.css
-│       ├── pages/
-│       │   ├── HomePage.jsx     # Landing / dashboard
-│       │   └── MapPage.jsx      # Interactive routing map
-│       ├── components/
-│       │   ├── MapView.jsx      # Leaflet map wrapper
-│       │   ├── RoutePanel.jsx   # Route results sidebar
-│       │   ├── AnomalyAlert.jsx # Real-time anomaly notifications
-│       │   └── ModeSelector.jsx # Transport mode picker
-│       └── services/
-│           ├── api.js           # Axios/fetch base client
-│           └── routeService.js  # Route-specific API calls
-│
-└── docs/
-    └── architecture.md          # Extended architecture documentation
-```
+Dhaka-like city mobility is not a single-mode problem. Users frequently switch between walking, rickshaw, bike, car, and transit depending on road type, congestion, and local constraints.
+
+Traditional route systems fail in three important ways for this context:
+
+- They treat all roads as equally accessible for all vehicles.
+- They do not react quickly to dynamic incidents (closures, flooding, congestion, VIP movement).
+- They do not expose judge-friendly transparency on how route decisions are made.
+
+GoliTransit addresses this by combining:
+
+- OSM road graph constraints by transport mode,
+- Dynamic anomaly-driven edge weight updates,
+- Multi-modal state-space shortest path search,
+- Frontend map visualization with route comparison and mode-color interpretation.
+
+Real-world relevance:
+
+- Emergency rerouting during accidents/waterlogging,
+- Better first/last-mile decisions,
+- Explainable mobility planning for mixed-transport cities.
 
 ---
 
-## 🚦 Key Features
+## 3. System Overview
 
-| Feature                      | Description                                                             |
-| ---------------------------- | ----------------------------------------------------------------------- |
-| **Single-Modal Routing**     | Shortest/fastest path for one transport mode (car, bike, walk, transit) |
-| **Multi-Modal Routing**      | Combine modes with configurable switch penalties                        |
-| **Real-Time Anomalies**      | Ingest accidents, closures, weather — dynamically reroute               |
-| **ML Congestion Prediction** | Predict edge traversal times using historical + live data               |
-| **Graph Snapshots**          | Export current graph state for debugging / visualization                |
+### Backend Architecture (FastAPI)
+
+The backend is a service-layered FastAPI application.
+
+Core modules:
+
+- `routes/`: thin HTTP controllers
+- `services/`: routing, graph, anomaly, traffic, ML integration logic
+- `models/`: Pydantic and SQLAlchemy schemas
+- `database.py`: SQLAlchemy session/engine
+
+Startup pipeline in `backend/main.py`:
+
+1. Create DB tables.
+2. Load and normalize OSM graph around AUST center.
+3. Initialize traffic dummy dataset + model.
+4. Start async traffic workers.
+
+### Frontend Architecture (React + Vite + Leaflet)
+
+Frontend is a React SPA with two main pages:
+
+- `HomePage` (landing)
+- `MapPage` (interactive route planning + anomaly injection)
+
+Key components:
+
+- `MapView`: route rendering, overlap handling, node overlays, anomaly overlays
+- `RoutePanel`: route compute controls + metrics
+- `RouteSelectionPanel`: fastest vs shortest multimodal selector
+- `ModeSelector`, `AnomalyModal`, `AnomalyAlert`
+
+### Database Layer
+
+SQLAlchemy models currently include:
+
+- `road_traffic_observations` (hourly per-edge dummy traffic labels)
+
+Default runtime DB is MySQL (from `config.json` and Docker Compose).
+
+### Graph / Routing Engine
+
+Graph source and processing:
+
+- OSMnx graph extraction (`network_type: all`) around configured center/radius
+- NetworkX MultiDiGraph in memory
+- Mode constraints per edge (`car_allowed`, `bike_allowed`, etc.)
+- Mode-specific travel time weights (`{mode}_travel_time`)
+- Current working graph size: **2,741 nodes** and **6,169 edges**
+
+Routing paths:
+
+- Single-modal shortest path
+- Multi-modal state-space Dijkstra (`(node, mode)` states)
+- Sequential fallback if state-space fails
+
+### ML / Anomaly / Real-Time Components
+
+- **Anomaly Service**: applies dynamic weight multipliers and mode disabling on affected edges.
+- **Traffic Jam Service**: async queue-based route-level risk prediction with retry and worker pool.
+- **ML Integration (Core Differentiator)**: backend route responses return fast while a decoupled ML pipeline computes per-edge traversal risk and route-level congestion probability.
+- **Fallback Safety**: if ML is unavailable, routing stays functional with deterministic fallback estimates so the UX remains stable.
+
+### High-Level Architecture Flow
+
+```text
+User Action (Frontend)
+  -> FastAPI Route API
+  -> RoutingEngine
+  -> GraphService + MultiModalDijkstra
+  -> (Optional) Anomaly effects + Traffic prediction job
+  -> Response + route_id
+  -> Frontend map render + async traffic polling
+```
+
+### ML Integration Flow (Highlighted)
+
+- `/route` returns route geometry and `route_id` quickly.
+- `TrafficJamService` enqueues ML prediction work without blocking route computation.
+- Worker threads call ML `/predict` with batched edge features.
+- Predictions are aggregated into route risk metrics and confidence.
+- Frontend polls `/traffic/{route_id}` to render final ML-enhanced traffic status.
+- If the ML service is down, fallback logic keeps routing and anomaly adaptation available.
 
 ---
 
-## ⚡ Quick Start
+## 4. Architecture Design
 
-```bash
-# Clone and enter repository
-git clone https://github.com/<your-username>/Aust_hackathon_26.git
-cd Aust_hackathon_26
+### 4.1 Multi-Layer Graph Model
 
-# Start everything using Docker (recommended)
-docker compose up --build
+GoliTransit uses one OSM truth graph with layered semantics:
+
+- **Base Layer**: geometry, length, road type
+- **Constraint Layer**: per-mode allowed/disallowed flags
+- **Weight Layer**: base and dynamic travel-time weights
+- **Runtime Layer**: anomaly multipliers, ML-predicted updates
+
+Why this design:
+
+- Preserves road topology integrity,
+- Allows safe dynamic behavior without mutating graph structure,
+- Keeps routing explainable (weights + constraints are observable).
+
+### 4.2 State Management Strategy (Frontend)
+
+React local state with explicit routing/anomaly state slices in `MapPage`:
+
+- origin/destination,
+- route mode (single vs multimodal),
+- selected comparison route,
+- anomalies,
+- async traffic status per route.
+
+Why this design:
+
+- Minimal overhead for hackathon scope,
+- Predictable and easy to demo,
+- No external state framework required.
+
+### 4.3 Concurrency Handling
+
+Traffic prediction pipeline is decoupled from route computation:
+
+- route request returns quickly with `route_id`,
+- prediction jobs are queued,
+- worker pool processes jobs concurrently,
+- retry with backoff for transient failures,
+- frontend polls `/traffic/{route_id}`.
+
+Why this design:
+
+- Keeps `/route` latency stable,
+- Prevents blocking request threads,
+- Scales with worker count.
+
+### 4.4 Real-Time Processing Pipeline
+
+```text
+Anomaly POST
+  -> AnomalyService validates + resolves edge targets
+  -> Graph edge weights updated (and optional mode disabling)
+  -> graph version incremented
+  -> next route requests automatically adapt
 ```
+
+### 4.5 Caching Strategy
+
+Implemented caches:
+
+- Route response cache with TTL in `RoutingEngine`
+- Single-source shortest-tree LRU cache in `RoutingEngine`
+- Mode-subgraph cache in `GraphService`
+- KDTree spatial index for nearest-node lookup
+- Edge prediction cache + route prediction lifecycle cache in `TrafficJamService`
+
+Why this design:
+
+- Reduces repeated graph traversals,
+- Accelerates hot-path route requests,
+- Supports interactive frontend usage.
 
 ---
 
-## ✅ Prerequisites
+## 5. Features
 
-- Python 3.11+
-- Node.js 18+
-- npm 9+
-- Docker + Docker Compose (recommended for one-command startup)
-- Git
+### Routing & Graph Intelligence
 
----
+- Single-modal route computation (`car`, `bike`, `walk`, `rickshaw`, `transit`).
+- Multi-modal state-space Dijkstra with mode switch penalties.
+- Road-geometry-respecting route rendering (no straight-line fake paths when graph path exists).
+- Fallback route generation if graph path is unavailable.
 
-## 🔌 Environment And Configuration
+### Dynamic Weighting & Anomaly Handling
 
-This project uses shared configuration from root config.json and environment variables from production.env.
+- Real-time anomaly ingestion.
+- Severity-driven edge weight multiplication.
+- Optional mode disabling on affected edges.
+- Automatic expiry and reconciliation of active anomaly effects.
 
-Important runtime variables:
+### API Platform
 
-- CONFIG_PATH: path to config.json for backend and ml services
-- VITE_PROXY_TARGET: frontend dev proxy target (default localhost backend)
-- DATABASE_URL: SQLAlchemy connection URL (used in container and non-container modes)
-- ML_PREDICTION_URL: backend URL for ML prediction server
+- RESTful backend endpoints for routing, anomalies, graph snapshots, and traffic status.
+- V2 endpoints for node-ID and coordinate-based multimodal routing.
 
-For local frontend development without Docker, ensure backend is reachable on http://127.0.0.1:8000 or set VITE_PROXY_TARGET.
+### Async Traffic Processing
 
----
+- Background queue + workers + retries for route traffic risk prediction.
+- Non-blocking route response with later status retrieval via `route_id`.
 
-## 🧪 Local Development Setup (Without Docker)
+### Visualization Layer
 
-1. Start backend:
+- Interactive Leaflet map with draggable origin/destination.
+- Multimodal fastest vs shortest comparison view.
+- Segment-level vehicle color rendering.
+- Vehicle color legend and route selection UX.
+- Graph node overlays filtered by selected mode.
+- Anomaly edge highlighting and bbox targeting.
 
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
+### ML Integration (Core Hackathon Highlight)
 
-2. Start ML service:
-
-```bash
-cd ml
-pip install -r requirements.txt
-python predict.py
-```
-
-3. Start frontend:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-4. Open the app at http://localhost:5173.
+- Dedicated ML FastAPI service predicts edge traversal times and route-level jam risk.
+- Queue + worker architecture keeps route API latency low under load.
+- Route lifecycle status (`loading` -> `ready`/`failed`) is exposed via `route_id`.
+- Graceful fallback keeps the system judge-demo ready even if the ML service is unavailable.
 
 ---
 
-## 🐳 Docker Execution Steps (Recommended)
+## 6. API Documentation
 
-1. Build and run all services:
+### 6.1 Backend Service (default `http://localhost:8000`)
 
-```bash
-docker compose up --build
+#### GET /health
+
+Description: Service health check.
+
+Request body:
+
+```json
+null
 ```
 
-2. Verify service health:
-
-```bash
-curl http://localhost:8000/health
-curl http://localhost:8001/health
-```
-
-3. Stop services:
-
-```bash
-docker compose down
-```
-
----
-
-## 🛰 API Usage
-
-Base URL:
-
-- Local backend: http://127.0.0.1:8000
-- Frontend proxy path in dev: /api
-
-### 1) Health
-
-Endpoint: GET /health
-
-Example:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-Expected response:
+Response:
 
 ```json
 {
@@ -245,335 +266,931 @@ Expected response:
 }
 ```
 
-### 2) Compute Route
+---
 
-Endpoint: POST /route
+#### POST /route
 
-Single-mode example:
+Description: Compute single-modal or multi-modal optimal route.
 
-```bash
-curl -X POST http://127.0.0.1:8000/route \
-  -H "Content-Type: application/json" \
-  -d '{
-    "origin": {"lat": 23.7639, "lng": 90.4066},
-    "destination": {"lat": 23.7512, "lng": 90.3938},
-    "modes": ["car"],
-    "optimize": "time",
-    "avoid_anomalies": true,
-    "include_multimodal": false,
-    "traffic_hour_of_day": 18
-  }'
+Request:
+
+```json
+{
+  "origin": { "lat": 23.7639, "lng": 90.4066 },
+  "destination": { "lat": 23.7725, "lng": 90.415 },
+  "modes": ["walk", "transit", "car"],
+  "optimize": "time",
+  "avoid_anomalies": true,
+  "include_multimodal": true,
+  "traffic_hour_of_day": 9,
+  "max_alternatives": 3
+}
 ```
 
-Multi-modal example:
-
-```bash
-curl -X POST http://127.0.0.1:8000/route \
-  -H "Content-Type: application/json" \
-  -d '{
-    "origin": {"lat": 23.7639, "lng": 90.4066},
-    "destination": {"lat": 23.7512, "lng": 90.3938},
-    "modes": ["walk", "bike", "rickshaw"],
-    "optimize": "time",
-    "avoid_anomalies": true,
-    "include_multimodal": true,
-    "traffic_hour_of_day": 9
-  }'
-```
-
-Route response includes:
-
-- legs with geometry, distance, duration and instructions
-- total_distance_m, total_duration_s, total_cost
-- multimodal_suggestions (shortest-distance and fastest-time strategies)
-- traffic_jam_prediction (route-level jam chance for selected hour)
-
-### 3) Report Anomaly
-
-Endpoint: POST /anomaly
-
-```bash
-curl -X POST http://127.0.0.1:8000/anomaly \
-  -H "Content-Type: application/json" \
-  -d '{
-    "edge_ids": ["12345->67890"],
-    "severity": "high",
-    "type": "accident",
-    "description": "Collision near intersection",
-    "duration_minutes": 30
-  }'
-```
-
-### 4) List Active Anomalies
-
-Endpoint: GET /anomaly
-
-```bash
-curl http://127.0.0.1:8000/anomaly
-```
-
-### 5) Graph Snapshot
-
-Endpoint: GET /graph/snapshot
-
-```bash
-curl "http://127.0.0.1:8000/graph/snapshot?include_edges=true"
-```
-
-Optional query params:
-
-- include_edges: boolean
-- bbox: south,west,north,east
-- mode: car | bike | walk | transit | rickshaw
-
-### Route Response Contract (Problem 1 Justification Mapping)
-
-Problem 1 asks every successful `/route` response to include route justification information.
-In this implementation, the required evidence is provided by the following response fields:
-
-- Computation details: route totals and selected strategy under `legs`, `total_duration_s`, and `multimodal_suggestions`
-- Sequential route coordinates: per-segment `geometry` in each leg
-- Vehicle class per segment: `legs[].mode` and segment-level strategy output in `multimodal_suggestions`
-- Mode-switch penalties: each switch is listed in `mode_switches[].penalty_time_s` and `mode_switches[].penalty_cost`
-
-Example successful route response (trimmed):
+Response:
 
 ```json
 {
   "legs": [
     {
       "mode": "walk",
-      "geometry": [{"lat": 23.7639, "lng": 90.4066}, {"lat": 23.7621, "lng": 90.4044}],
-      "distance_m": 240.2,
-      "duration_s": 172.9,
-      "cost": 0.0
-    },
-    {
-      "mode": "rickshaw",
-      "geometry": [{"lat": 23.7621, "lng": 90.4044}, {"lat": 23.7512, "lng": 90.3938}],
-      "distance_m": 1630.8,
-      "duration_s": 412.0,
-      "cost": 40.0
+      "geometry": [{ "lat": 23.7639, "lng": 90.4066 }],
+      "distance_m": 210.5,
+      "duration_s": 155.2,
+      "cost": 0,
+      "instructions": ["Start...", "Arrive..."]
     }
   ],
   "mode_switches": [
     {
       "from_mode": "walk",
-      "to_mode": "rickshaw",
-      "location": {"lat": 23.7621, "lng": 90.4044},
-      "penalty_time_s": 60.0,
-      "penalty_cost": 5.0
+      "to_mode": "transit",
+      "location": { "lat": 23.765, "lng": 90.408 },
+      "penalty_time_s": 60,
+      "penalty_cost": 0.2
     }
   ],
-  "total_distance_m": 1871.0,
-  "total_duration_s": 644.9,
-  "total_cost": 45.0,
-  "multimodal_suggestions": [
-    {
-      "strategy": "shortest_distance",
-      "total_distance_m": 1820.2,
-      "total_duration_s": 701.3,
-      "segments": []
-    },
-    {
-      "strategy": "fastest_time",
-      "total_distance_m": 1934.5,
-      "total_duration_s": 620.1,
-      "segments": []
-    }
-  ],
-  "traffic_jam_prediction": {
-    "hour_of_day": 18,
-    "route_jam_chance_pct": 46.2,
-    "edges_analyzed": 12,
-    "heavy_edges": 3,
-    "moderate_edges": 5,
-    "low_edges": 4,
-    "confidence": 0.87
+  "total_distance_m": 3200.4,
+  "total_duration_s": 820.6,
+  "total_cost": 1.4,
+  "anomalies_avoided": 2,
+  "alternatives": [],
+  "multimodal_suggestions": [],
+  "traffic_jam_prediction": null,
+  "route_id": "route_ab12cd34ef56",
+  "traffic_status": "loading"
+}
+```
+
+---
+
+#### GET /traffic/{route_id}
+
+Description: Get asynchronous traffic prediction status for an existing route.
+
+Request body:
+
+```json
+null
+```
+
+Response:
+
+```json
+{
+  "route_id": "route_ab12cd34ef56",
+  "status": "ready",
+  "job_status": "completed",
+  "retry_count": 0,
+  "max_retries": 3,
+  "updated_at": 1712833000.42,
+  "data": {
+    "hour_of_day": 9,
+    "route_jam_chance_pct": 34.8,
+    "edges_analyzed": 41,
+    "heavy_edges": 4,
+    "moderate_edges": 12,
+    "low_edges": 25,
+    "confidence": 0.92
   }
 }
 ```
 
 ---
 
-## 📋 Problem 1 Compliance Matrix
+#### POST /anomaly
 
-| Problem 1 Requirement | Current Implementation |
-| --- | --- |
-| Multi-layer graph with mode restrictions | Implemented via mode-specific edge flags and filtering in graph/routing services |
-| Single-modal routing | Implemented in `/route` with `modes: ["car"]`-style requests |
-| Multi-modal segmented routing with switch penalties | Implemented in `/route` using ordered `modes` and `mode_switches` penalties |
-| Gridlock anomaly ingestion and targeted updates | Implemented in `POST /anomaly` (edge/bbox impact) |
-| Expose graph state for verification | Implemented in `GET /graph/snapshot` |
-| Route justification evidence | Returned through `legs`, `geometry`, `mode_switches`, route totals, suggestions |
-| Real-time reroute behavior after anomaly | New route requests reflect updated graph weights immediately |
+Description: Inject anomaly and apply dynamic graph effects.
 
----
+Request:
 
-## 🎬 Problem 1 Demo Checklist
+```json
+{
+  "type": "waterlogging",
+  "severity": "high",
+  "edge_ids": ["123->456"],
+  "vehicle_types": ["car", "bike"],
+  "description": "Road submerged after rain",
+  "duration_minutes": 45
+}
+```
 
-Use these exact scenarios in the demo video for scoring alignment:
+Response:
 
-1. Single-modal route request under urban traffic
-2. Multi-modal route computation with at least one mode switch
-3. Gridlock anomaly ingestion and visible rerouting effect
-4. Verification that vehicle-class restrictions are respected on every segment
-
----
-
-## 🧠 Design Decisions
-
-- Thin-route, service-first backend structure: API handlers stay lightweight while business logic lives in services.
-- Graph-centric routing: OSM road network is loaded into memory once and reused for fast route computation.
-- Dynamic anomaly weighting: anomalies update edge weights so rerouting behavior is immediate.
-- Pluggable ML traffic signal: route-level traffic risk is computed from route edges and selected hour-of-day.
-- Frontend/backend mode symmetry: single and multimodal logic share common contracts with explicit mode toggling.
+```json
+{
+  "anomaly_id": "anomaly_9f31e7b1d4a2",
+  "status": "accepted",
+  "affected_edges": 1,
+  "edge_ids": ["123->456"],
+  "vehicle_types": ["bike", "car"],
+  "severity": 3
+}
+```
 
 ---
 
-## 📌 Assumptions
+#### GET /anomaly
 
-- The selected map area is bounded by config.json graph radius and center.
-- ML service is reachable when traffic-aware prediction is requested; otherwise fallback behavior applies.
-- OSM data quality determines road-type and mode accessibility accuracy.
-- Route quality depends on available nodes near origin and destination coordinates.
-- Severity labels and multipliers in anomaly flow are configured in config.json.
+Description: List active anomalies.
+
+Request body:
+
+```json
+null
+```
+
+Response:
+
+```json
+{
+  "anomalies": [
+    {
+      "anomaly_id": "anomaly_9f31e7b1d4a2",
+      "edge_ids": ["123->456"],
+      "severity": 3,
+      "type": "waterlogging",
+      "description": "Road submerged after rain",
+      "weight_multiplier": 3,
+      "created_at": "2026-04-11T10:10:00Z",
+      "expires_at": "2026-04-11T10:55:00Z"
+    }
+  ],
+  "count": 1
+}
+```
 
 ---
 
-## ▶️ Execution Flow Summary
+#### DELETE /anomaly
 
-1. Frontend sends route request with origin, destination, mode(s), and optional traffic_hour_of_day.
-2. Backend routing engine computes candidate path(s) from current graph state.
-3. Active anomalies alter edge weights before final path scoring.
-4. ML traffic module estimates jam chance from route edges for chosen hour.
-5. Response returns legs, totals, multimodal suggestions, and traffic prediction.
+Description: Clear all active anomalies and reset effects.
+
+Request body:
+
+```json
+null
+```
+
+Response:
+
+```json
+{
+  "status": "cleared",
+  "count": 3
+}
+```
 
 ---
 
-## 🧪 Testing And Validation
+#### GET /graph/snapshot
 
-Backend tests:
+Description: Return graph snapshot for visualization/debugging.
+
+Query params:
+
+- `include_edges` (bool)
+- `bbox` = `south,west,north,east` (optional)
+- `mode` = `car|bike|walk|transit|rickshaw` (optional)
+
+Response:
+
+```json
+{
+  "node_count": 2741,
+  "edge_count": 6169,
+  "nodes": [
+    {
+      "id": "123456",
+      "lat": 23.7631,
+      "lng": 90.4058,
+      "accessible_modes": ["car", "walk", "rickshaw"]
+    }
+  ],
+  "edges": [],
+  "anomaly_affected_edges": []
+}
+```
+
+---
+
+### 6.2 V2 Routing & Validation API (`/v2`)
+
+#### POST /v2/route
+
+Description: Multi-modal state-space Dijkstra by source/destination node IDs.
+
+Request:
+
+```json
+{
+  "source": 123456,
+  "destination": 789012,
+  "allowed_modes": ["car", "rickshaw", "walk"],
+  "mode_switch_penalty": 5
+}
+```
+
+Response:
+
+```json
+{
+  "computation_time_ms": 312.8,
+  "node_path": [123456, 223344, 789012],
+  "coordinate_path": [{ "node_id": 123456, "lat": 23.7639, "lng": 90.4066 }],
+  "path": [{ "from": 123456, "to": 223344, "mode": "walk" }],
+  "geometry": [
+    [23.7639, 90.4066],
+    [23.7645, 90.4074]
+  ],
+  "total_cost": 189.4,
+  "num_steps": 2,
+  "modes_used": ["walk", "car"],
+  "justification": "Multi-modal optimal route computed..."
+}
+```
+
+---
+
+#### POST /v2/route/coords
+
+Description: Multi-modal state-space Dijkstra by lat/lng with nearest-node or edge snap.
+
+Request:
+
+```json
+{
+  "source_lat": 23.7639,
+  "source_lng": 90.4066,
+  "dest_lat": 23.7725,
+  "dest_lng": 90.415,
+  "allowed_modes": ["walk", "transit", "car"],
+  "mode_switch_penalty": 5
+}
+```
+
+Response:
+
+```json
+{
+  "computation_time_ms": 341.2,
+  "source_node": 123456,
+  "destination_node": 789012,
+  "source_snap_distance_m": 8.7,
+  "dest_snap_distance_m": 11.3,
+  "node_path": [123456, 223344, 789012],
+  "coordinate_path": [],
+  "path": [],
+  "geometry": [],
+  "total_cost": 205.9,
+  "num_steps": 2,
+  "modes_used": ["walk", "transit"],
+  "justification": "Multi-modal optimal route computed..."
+}
+```
+
+---
+
+#### POST /v2/anomaly
+
+Description: Directly modify v2 graph edge weights by severity.
+
+Request:
+
+```json
+{
+  "affected_edges": [
+    [123456, 223344],
+    [223344, 789012]
+  ],
+  "severity": 4
+}
+```
+
+Response:
+
+```json
+{
+  "status": "updated",
+  "edges_affected": 2,
+  "cars_blocked": 2,
+  "severity": 4,
+  "multiplier_applied": 3
+}
+```
+
+---
+
+#### GET /v2/graph/snapshot
+
+Description: Debug graph sample for v2 engine.
+
+Query params:
+
+- `limit` (default 100)
+- `include_weights` (default false)
+
+Response:
+
+```json
+{
+  "total_nodes": 2741,
+  "total_edges": 6169,
+  "nodes_sample": [123456],
+  "edges_sample": [
+    {
+      "from": 123456,
+      "to": 223344
+    }
+  ]
+}
+```
+
+---
+
+#### GET /v2/graph/validate
+
+Description: Validate graph constraints and integrity for audit/judging.
+
+Response:
+
+```json
+{
+  "valid": true,
+  "issues": [],
+  "stats": {
+    "total_nodes": 2741,
+    "total_edges": 6169,
+    "negative_weight_edges": 0,
+    "connected_components": 1
+  },
+  "design_rules": {
+    "edges_from_osm": true,
+    "no_negative_weights": true,
+    "graph_connected": true,
+    "road_geometry_available": true
+  }
+}
+```
+
+---
+
+### 6.3 ML Microservice (Core Integration Highlight, default `http://localhost:8001`)
+
+#### GET /health
+
+Description: ML service and model-load status.
+
+Response:
+
+```json
+{
+  "status": "healthy",
+  "service": "GoliTransit ML Prediction",
+  "model_type": "random_forest",
+  "model_loaded": true
+}
+```
+
+---
+
+#### POST /predict
+
+Description: Batch edge traversal time prediction endpoint used by backend integration.
+
+Request:
+
+```json
+{
+  "edges": [
+    {
+      "source": "123",
+      "target": "456",
+      "features": {
+        "hour_of_day": 8,
+        "day_of_week": 2,
+        "road_type": 3,
+        "road_length_m": 120.0,
+        "speed_limit": 40,
+        "historical_avg_time": 11.8
+      }
+    }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "predictions": [
+    {
+      "source": "123",
+      "target": "456",
+      "predicted_time_s": 14.7
+    }
+  ],
+  "model_type": "random_forest",
+  "model_version": "v1"
+}
+```
+
+---
+
+## 7. Setup Instructions (Very Important)
+
+### 7.1 Prerequisites
+
+- Python 3.11 (recommended)
+- Node.js 20.x (recommended)
+- MySQL 8.x
+- Docker + Docker Compose (recommended for judges)
+
+---
+
+### 7.2 Quick Judge Setup (Docker Recommended)
+
+1. Clone repository:
+
+```bash
+git clone https://github.com/md-sazid9089/Aust_hackathon_26.git
+cd Aust_hackathon_26
+```
+
+2. Start full stack:
+
+```bash
+docker compose up --build
+```
+
+3. Access services:
+
+- Frontend: `http://localhost:5174`
+- Backend API: `http://localhost:8000`
+- Backend Docs: `http://localhost:8000/docs`
+- ML API: `http://localhost:8001`
+
+4. Production-style compose (optional):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+---
+
+### 7.3 Local Development Setup (Without Docker)
+
+#### Backend
 
 ```bash
 cd backend
-pytest tests -q
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# Linux/Mac
+source .venv/bin/activate
+
+pip install -r requirements.txt
 ```
 
-Frontend build validation:
+Important:
+
+- Ensure MySQL is running and reachable.
+- Update root `config.json` database section for your local DB host/user/password.
+- From `backend/`, run:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+#### ML Service
+
+```bash
+cd ml
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# Linux/Mac
+source .venv/bin/activate
+
+pip install -r requirements.txt
+python predict.py
+```
+
+#### Frontend
 
 ```bash
 cd frontend
-npm run build
+npm install
+npm run dev
 ```
 
-Compose validation:
+Frontend dev server defaults to Vite and proxies `/api` to backend.
+
+---
+
+### 7.4 Environment Variables
+
+#### Backend / Infrastructure
+
+- `CONFIG_PATH` (path to root config JSON)
+- `PORT` (backend port)
+- `DATABASE_URL` (optional full SQLAlchemy DSN override)
+- `ML_PREDICTION_URL` (ML endpoint)
+- `REDIS_URL` (Redis connection)
+- `TESTING` (`1|true` to skip heavy startup operations in tests)
+
+#### Frontend
+
+- `VITE_PROXY_TARGET`
+- `VITE_API_BASE_URL`
+- `VITE_HMR_CLIENT_PORT`
+- `VITE_DEV_SERVER_PORT`
+- `DOCKER`
+
+#### Docker Compose DB Variables
+
+- `MYSQL_ROOT_PASSWORD`
+- `DB_NAME`
+- `DB_USER`
+- `DB_PASSWORD`
+
+Note: Do not commit real credentials. Use secure environment-specific values.
+
+---
+
+## 8. Execution Steps
+
+### Step 1: Start Backend
+
+Docker:
 
 ```bash
-docker compose config
+docker compose up backend mysql redis ml
 ```
 
-Optional performance verification (Problem 1 real-time targets):
+Local:
 
-- Route latency target: multimodal p95 under 2.5s
-- Anomaly update target: propagation under 500ms
-- Concurrency target: 50+ simultaneous requests
+```bash
+cd backend
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
 
-You can validate these with your preferred load-test tool (Locust, k6, JMeter) against `/route` and `/anomaly`.
+### Step 2: Start Frontend
 
----
+Docker:
 
-## 🔧 Configuration
+```bash
+docker compose up frontend
+```
 
-See `config.json` for:
+Local:
 
-- Vehicle type definitions (speed, allowed road types)
-- Mode-switch penalties (time + cost)
-- Anomaly severity thresholds
-- ML model parameters
+```bash
+cd frontend
+npm run dev
+```
 
-Also review:
+### Step 3: Test APIs
 
-- `backend/config.py` for runtime settings mapping
-- `backend/routes/route.py` and `backend/models/route_models.py` for request/response contract
-- `backend/routes/anomaly.py` for anomaly ingestion and clearing behavior
+Health check:
 
----
+```bash
+curl http://localhost:8000/health
+```
 
-## 🛠 Troubleshooting
+Route compute:
 
-- Frontend cannot call backend:
-  - Confirm backend is running on port 8000.
-  - If running locally, check frontend Vite proxy target.
-- Route returns empty/poor geometry:
-  - Confirm origin/destination are within configured graph area.
-  - Expand graph radius in config.json if required.
-- Traffic prediction missing:
-  - Confirm ML service is up on port 8001 and reachable from backend.
-- Docker startup issues:
-  - Run docker compose down -v, then docker compose up --build.
+```bash
+curl -X POST http://localhost:8000/route \
+  -H "Content-Type: application/json" \
+  -d '{
+    "origin": {"lat": 23.7639, "lng": 90.4066},
+    "destination": {"lat": 23.7725, "lng": 90.4150},
+    "modes": ["car"],
+    "optimize": "time",
+    "avoid_anomalies": true
+  }'
+```
 
----
+### Step 4: Run Full System
 
-## 🏗 Tech Stack
+```bash
+docker compose up --build
+```
 
-- **Frontend**: React 18, Leaflet.js, TailwindCSS, Vite
-- **Backend**: Python 3.11+, FastAPI, NetworkX, OSMnx
-- **ML**: scikit-learn / TensorFlow (pluggable)
-- **Data**: OpenStreetMap (OSM) via OSMnx
-
----
-
-## 📄 License
-
-MIT — Built for hackathon demonstration purposes.
+Then open frontend and execute route scenarios from UI.
 
 ---
 
-## 🔁 CI/CD (GitHub Actions)
+## 9. Design Decisions
 
-This repository now includes two workflows:
+### Why Dijkstra / State-Space Dijkstra
 
-- `.github/workflows/ci.yml`
-  - Runs on push to `dev`, and on every pull request.
-  - Executes backend tests (`pytest backend/tests -q`).
-  - Builds the frontend (`npm run build`).
-  - Validates Docker Compose (`docker compose config`).
+- Deterministic shortest path behavior with weighted graph semantics.
+- State-space extension enables multi-modal switching during traversal (not only pre-defined segmented legs).
+- Fits dynamic edge weight updates from anomalies.
 
-- `.github/workflows/cd.yml`
-  - Runs on push to `dev`, on pull requests targeting `dev`, and manual trigger.
-  - Builds and pushes Docker images to GHCR:
-    - `ghcr.io/<owner>/aust-hackathon-26-backend`
-    - `ghcr.io/<owner>/aust-hackathon-26-ml`
-    - `ghcr.io/<owner>/aust-hackathon-26-frontend`
-  - Builds and deploys the frontend to Vercel production on `dev`.
-  - Creates Vercel preview deployments for pull requests.
+### Why OSM-Centric Graph
 
-### Required repository setup
+- Real road geometry and topology.
+- Tag-level transport restrictions (`footway`, `motorway`, `service=alley`) can be encoded as hard constraints.
 
-1. Add repository variable:
-   - `VITE_API_BASE_URL` = your production API URL (example: `https://api.example.com`).
-2. Add repository secrets (from your Vercel project settings):
-   - `VERCEL_TOKEN`
-   - `VERCEL_ORG_ID`
-   - `VERCEL_PROJECT_ID`
-3. Ensure workflow permissions allow writing packages (already set in workflow file).
+### Why Async Traffic Pipeline
 
-### Notes
+- Traffic prediction is non-critical-path relative to route geometry.
+- Returning `route_id` quickly improves UX and API responsiveness.
 
-- CI validates backend tests, frontend build, and compose syntax on each PR/push to `dev`.
-- CD builds and publishes container images, then deploys frontend via Vercel workflow.
+### Why Multiple Caches
+
+- Shortest tree cache for repeated origins.
+- Route response cache for repeated requests.
+- Mode subgraph cache and KDTree for geospatial efficiency.
+- Prediction cache to avoid repeated per-edge inference.
+
+### Tradeoffs
+
+- In-memory anomaly state is fast but not durable across restarts.
+- Current ML integration has functional fallback and stubs in training pipeline.
+- Locality-focused graph radius improves latency but limits geographic coverage.
 
 ---
 
-## 🌐 Production Frontend Deploy
+## 10. Assumptions
 
-The live frontend is deployed at:
-
-👉 **[https://aust-hackathon-26.vercel.app/](https://aust-hackathon-26.vercel.app/)**
+- Graph is built around configured AUST center with a finite radius (2 km by default).
+- OSM tags are available and sufficiently accurate for transport constraints.
+- Input coordinates are near graph coverage; far points may require nearest-edge snap.
+- `modes` list in route request is ordered and intentional.
+- Anomaly reports supply valid edge references, location, or bbox target definitions.
+- MySQL is available for traffic observation persistence.
+- ML service may be unavailable; routing still works via fallback strategy.
+- Judge flow is currently focused on routing, anomaly adaptation, and ML traffic prediction (no authentication dependency).
 
 ---
 
-### Vercel Token Usage
+## 11. Performance & Scalability
 
-- The `VERCEL_TOKEN` secret is required for deploys and must be stored as a GitHub Actions secret. **Never expose this token in logs or outputs.**
+### Algorithmic Complexity
+
+- Single-modal shortest path (Dijkstra): `O((V + E) log V)`
+- Multi-modal state-space Dijkstra:
+  - states: `|V| * |M|`
+  - transitions: `|E| * |M|`
+  - overall approx: `O((|V||M| + |E||M|) log(|V||M|))`
+
+### Real-Time Update Strategy
+
+- Anomalies adjust edge weights in-place and increment graph version.
+- New route calls consume updated weights immediately.
+
+### Concurrency
+
+- FastAPI async request handling.
+- Route traffic prediction queue with multiple workers and retry backoff.
+- Production compose backend configured with multiple Uvicorn workers.
+
+### Latency Optimization Techniques
+
+- KDTree nearest-node lookup.
+- Mode-subgraph caching.
+- Shortest-path tree LRU cache.
+- Route response TTL cache.
+- Edge-level prediction cache.
+
+### p95/Runtime Targets
+
+- Practical target for judge demos on local AUST graph: p95 route response under 1s.
+- Profiling logs in service output commonly show ~300-350 ms algorithm time for multimodal state-space runs on the current graph size.
+
+### Scalability Roadmap
+
+- Current scope is single-instance in-memory graph.
+- Horizontal scale requires shared anomaly/prediction state and graph sharding/partitioning strategy.
+
+---
+
+## 12. Project Structure
+
+```text
+Aust_hackathon_26/
+|- backend/
+|  |- main.py
+|  |- config.py
+|  |- database.py
+|  |- routes/
+|  |  |- health.py
+|  |  |- auth.py
+|  |  |- route.py
+|  |  |- traffic.py
+|  |  |- anomaly.py
+|  |  |- graph.py
+|  |  '- v2.py
+|  |- services/
+|  |  |- graph_service.py
+|  |  |- routing_engine.py
+|  |  |- multimodal_dijkstra.py
+|  |  |- anomaly_service.py
+|  |  |- traffic_jam_service.py
+|  |  |- ml_integration.py
+|  |  '- auth_service.py
+|  |- models/
+|  |  |- route_models.py
+|  |  |- anomaly_models.py
+|  |  |- graph_models.py
+|  |  |- auth_schemas.py
+|  |  |- user_models.py
+|  |  '- traffic_models.py
+|  |- utils/
+|  |  '- osm_graph_builder.py
+|  |- tests/
+|  '- Dockerfile
+|- frontend/
+|  |- src/
+|  |  |- App.jsx
+|  |  |- pages/
+|  |  |  |- HomePage.jsx
+|  |  |  '- MapPage.jsx
+|  |  |- components/
+|  |  |  |- MapView.jsx
+|  |  |  |- RoutePanel.jsx
+|  |  |  |- RouteSelectionPanel.jsx
+|  |  |  |- ModeSelector.jsx
+|  |  |  |- AnomalyModal.jsx
+|  |  |  '- AnomalyAlert.jsx
+|  |  '- services/
+|  |     |- api.js
+|  |     '- routeService.js
+|  |- package.json
+|  |- vite.config.js
+|  '- Dockerfile
+|- ml/
+|  |- predict.py
+|  |- preprocess.py
+|  |- train.py
+|  |- model_registry.py
+|  |- requirements.txt
+|  '- Dockerfile
+|- config.json
+|- docker-compose.yml
+|- docker-compose.prod.yml
+|- render.yaml
+|- setup-local.sh
+'- test-render-readiness.sh
+```
+
+---
+
+## 13. Future Improvements
+
+- Replace ML stubs with fully trained and deployed traffic model pipeline.
+- Persist anomaly and async job state in Redis/MySQL for restart durability.
+- Add WebSocket push for real-time route traffic status instead of polling.
+- Add distributed/partitioned graph processing for city-scale expansion.
+- Introduce historical anomaly analytics and incident replay.
+- Add role-based admin moderation for anomaly ingestion.
+- Implement mobile client and offline route snapshot support.
+
+---
+
+## 14. Credits / Team
+
+### TEAM NULL
+
+- Md Tayeb Ibne Sayed
+- MD Sazid
+- Shajedul Kabir Rafi
+
+---
+
+### Suggested Judge Demo Flow
+
+1. Open frontend map.
+2. Set origin and destination.
+3. Compute single-mode and multimodal routes.
+4. Inject anomaly on selected edge or bbox.
+5. Recompute and compare route adaptation.
+6. Observe asynchronous traffic status transitions (`loading -> ready`).
+
+---
+
+## 15. Hackathon Showcase: Codebase-Wide Feature Inventory
+
+### 15.1 Routing Intelligence
+
+- OSM-based graph extraction around AUST and normalization into an in-memory NetworkX MultiDiGraph.
+- Single-modal and multi-modal routing from the same graph source.
+- State-space Dijkstra (`(node, mode)`) for true in-path mode switching.
+- Sequential multimodal fallback strategy when state-space pathing cannot be resolved.
+- Config-driven mode-switch penalties and mode constraints.
+- Geometry-preserving route rendering (road-following coordinates, no synthetic straight-line jumps when graph path exists).
+- Coordinate-to-graph snapping support (nearest-node and nearest-edge fallback in v2 coordinate routing).
+
+### 15.2 Real-Time Incident and Dynamic Reweighting
+
+- Live anomaly ingestion with severity (`low`, `medium`, `high`, `critical`).
+- Edge targeting by direct edge IDs or by map-selected bounding box (frontend-assisted targeting).
+- Severity-driven edge weight multiplication and optional mode blocking behavior for high-severity incidents.
+- Active anomaly lifecycle management (list, clear, expiry reconciliation).
+- Graph version tracking so new route computations adapt immediately after anomaly updates.
+
+### 15.3 Async Traffic and ML-Augmented Pipeline
+
+- Route response returns immediately with `route_id`.
+- Non-blocking traffic prediction pipeline with internal queue, worker pool, and retry with backoff.
+- Route traffic lifecycle endpoint (`loading`, `ready`, `failed`) for frontend polling.
+- Edge-level prediction cache and route-level lifecycle cache with TTL-based eviction.
+- ML prediction microservice endpoint integration (`/predict`) and graceful fallback behavior when ML is unavailable.
+- Service-level dataset generation/training utilities for traffic model bootstrapping.
+
+### 15.4 Frontend Demo UX Capabilities
+
+- Health-aware landing page with engine status indicator.
+- Full-screen interactive map planner.
+- Origin/destination selection via map click and draggable markers.
+- Single-mode route flow and multimodal compare flow.
+- Fastest vs shortest comparison selector with overlap-aware rendering.
+- Segment-level vehicle coloring plus persistent vehicle color legend.
+- Anomaly injection UI for edge mode and bbox mode.
+- Live anomaly overlay rendering and anomaly panel controls.
+- Progressive traffic status UX (`loading -> ready/failed`) tied to backend polling.
+- Graph overlay visualization support (nodes/edges snapshot rendering paths).
+
+### 15.5 API Surface Implemented in Code
+
+- Core: `GET /health`, `POST /route`, `GET /traffic/{route_id}`
+- Anomalies: `POST /anomaly`, `GET /anomaly`, `DELETE /anomaly`
+- Graph: `GET /graph/snapshot`
+- V2 engine: `POST /v2/route`, `POST /v2/route/coords`, `POST /v2/anomaly`, `GET /v2/graph/snapshot`, `GET /v2/graph/validate`
+- Auth module exists in code (`/auth/register`, `/auth/login`) but is not part of the current hackathon judge flow.
+
+### 15.6 Data, Caching, and Reliability Primitives
+
+- MySQL persistence for road traffic observation records.
+- Redis integration for runtime caching support.
+- Route caching, shortest-tree caching, mode subgraph caching, and KDTree nearest-node acceleration.
+- Automated startup initialization pipeline (DB table ensure, graph load, traffic service bootstrap, worker start).
+- Test suite coverage across routing, anomaly, graph, and multimodal logic (`backend/tests`).
+
+---
+
+## 16. CI/CD and Deployment Implementation
+
+### 16.1 Continuous Integration (`.github/workflows/ci.yml`)
+
+- Triggered on push to `dev` and on pull requests.
+- Backend test job:
+  - Python 3.11 setup
+  - dependency install from `backend/requirements.txt`
+  - `pytest` execution with `TESTING=1` and in-memory SQLite override for fast deterministic CI
+- Frontend build job:
+  - Node 20 setup
+  - `npm ci` and production build validation
+- Docker validation job:
+  - `docker compose config` structural validation
+
+### 16.2 Continuous Delivery (`.github/workflows/cd.yml`)
+
+- Triggered on push to `dev`, PRs targeting `dev`, and manual dispatch.
+- Container publication pipeline (non-PR):
+  - builds backend, ML, and frontend images
+  - pushes to GHCR with both `latest` and commit-SHA tags
+- Frontend Vercel production deployment (non-PR):
+  - pulls Vercel production env metadata
+  - builds frontend
+  - executes `vercel deploy --prod`
+- Frontend Vercel preview deployment (PR):
+  - builds preview artifact
+  - deploys preview and publishes preview URL into workflow summary
+
+### 16.3 Azure Deployment Workflow (`.github/workflows/dev_maploactor.yml`)
+
+- Separate Azure-focused pipeline configured for the `maploactor` Azure Web App.
+- Triggered on push to `dev` and manual dispatch.
+- Uploads build artifact and deploys via `azure/webapps-deploy`.
+
+### 16.4 Render Deployment Path
+
+- `render.yaml` defines backend service, health checks, auto-deploy, persistent disk for OSM cache, and environment wiring.
+- `backend/render-build.sh` performs dependency installation and import verification.
+- `backend/render-start.sh` validates config and starts Uvicorn with Render-ready settings.
+
+### 16.5 Containerized Runtime Strategy
+
+- `docker-compose.yml` orchestrates local/dev stack: backend, frontend, ML, MySQL, Redis.
+- `docker-compose.prod.yml` applies production overrides (worker count, resource limits, production frontend image target).
+- Multi-stage Dockerfiles implemented for backend, frontend, and ML services.
+
+---
+
+## 17. Live Deployments and Public Domains
+
+- Frontend (Vercel): https://aust-hackathon-26.vercel.app/
+- Backend (Azure App Service): https://maploactor-eve5e0d5f5h0aqh8.southeastasia-01.azurewebsites.net/
+- Backend (Render): https://aust-hackathon-26.onrender.com/
+- Public live domain: https://www.smartcommutebd.live/
+
+Notes:
+
+- The same codebase supports multiple backend hosting targets (Azure and Render) and a Vercel-hosted frontend.
+- For hackathon demos, backend target can be switched by frontend environment configuration without changing application logic.
