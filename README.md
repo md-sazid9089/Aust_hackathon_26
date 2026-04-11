@@ -43,7 +43,7 @@
 │  │  (OSM +  │  │(sklearn / │  │ Registry  │  │  (edge traversal │    │
 │  │ traffic) │  │ TF stubs) │  │           │  │   time weights)  │    │
 │  └──────────┘  └───────────┘  └───────────┘  └──────────────────┘    │
-└─────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -133,7 +133,7 @@ GoliTransit/
 
 ```bash
 # Clone and enter repository
-git clone <your-repo-url>
+git clone https://github.com/<your-username>/Aust_hackathon_26.git
 cd Aust_hackathon_26
 
 # Start everything using Docker (recommended)
@@ -326,6 +326,99 @@ Optional query params:
 - bbox: south,west,north,east
 - mode: car | bike | walk | transit | rickshaw
 
+### Route Response Contract (Problem 1 Justification Mapping)
+
+Problem 1 asks every successful `/route` response to include route justification information.
+In this implementation, the required evidence is provided by the following response fields:
+
+- Computation details: route totals and selected strategy under `legs`, `total_duration_s`, and `multimodal_suggestions`
+- Sequential route coordinates: per-segment `geometry` in each leg
+- Vehicle class per segment: `legs[].mode` and segment-level strategy output in `multimodal_suggestions`
+- Mode-switch penalties: each switch is listed in `mode_switches[].penalty_time_s` and `mode_switches[].penalty_cost`
+
+Example successful route response (trimmed):
+
+```json
+{
+  "legs": [
+    {
+      "mode": "walk",
+      "geometry": [{"lat": 23.7639, "lng": 90.4066}, {"lat": 23.7621, "lng": 90.4044}],
+      "distance_m": 240.2,
+      "duration_s": 172.9,
+      "cost": 0.0
+    },
+    {
+      "mode": "rickshaw",
+      "geometry": [{"lat": 23.7621, "lng": 90.4044}, {"lat": 23.7512, "lng": 90.3938}],
+      "distance_m": 1630.8,
+      "duration_s": 412.0,
+      "cost": 40.0
+    }
+  ],
+  "mode_switches": [
+    {
+      "from_mode": "walk",
+      "to_mode": "rickshaw",
+      "location": {"lat": 23.7621, "lng": 90.4044},
+      "penalty_time_s": 60.0,
+      "penalty_cost": 5.0
+    }
+  ],
+  "total_distance_m": 1871.0,
+  "total_duration_s": 644.9,
+  "total_cost": 45.0,
+  "multimodal_suggestions": [
+    {
+      "strategy": "shortest_distance",
+      "total_distance_m": 1820.2,
+      "total_duration_s": 701.3,
+      "segments": []
+    },
+    {
+      "strategy": "fastest_time",
+      "total_distance_m": 1934.5,
+      "total_duration_s": 620.1,
+      "segments": []
+    }
+  ],
+  "traffic_jam_prediction": {
+    "hour_of_day": 18,
+    "route_jam_chance_pct": 46.2,
+    "edges_analyzed": 12,
+    "heavy_edges": 3,
+    "moderate_edges": 5,
+    "low_edges": 4,
+    "confidence": 0.87
+  }
+}
+```
+
+---
+
+## 📋 Problem 1 Compliance Matrix
+
+| Problem 1 Requirement | Current Implementation |
+| --- | --- |
+| Multi-layer graph with mode restrictions | Implemented via mode-specific edge flags and filtering in graph/routing services |
+| Single-modal routing | Implemented in `/route` with `modes: ["car"]`-style requests |
+| Multi-modal segmented routing with switch penalties | Implemented in `/route` using ordered `modes` and `mode_switches` penalties |
+| Gridlock anomaly ingestion and targeted updates | Implemented in `POST /anomaly` (edge/bbox impact) |
+| Expose graph state for verification | Implemented in `GET /graph/snapshot` |
+| Route justification evidence | Returned through `legs`, `geometry`, `mode_switches`, route totals, suggestions |
+| Real-time reroute behavior after anomaly | New route requests reflect updated graph weights immediately |
+
+---
+
+## 🎬 Problem 1 Demo Checklist
+
+Use these exact scenarios in the demo video for scoring alignment:
+
+1. Single-modal route request under urban traffic
+2. Multi-modal route computation with at least one mode switch
+3. Gridlock anomaly ingestion and visible rerouting effect
+4. Verification that vehicle-class restrictions are respected on every segment
+
 ---
 
 ## 🧠 Design Decisions
@@ -379,6 +472,14 @@ Compose validation:
 ```bash
 docker compose config
 ```
+
+Optional performance verification (Problem 1 real-time targets):
+
+- Route latency target: multimodal p95 under 2.5s
+- Anomaly update target: propagation under 500ms
+- Concurrency target: 50+ simultaneous requests
+
+You can validate these with your preferred load-test tool (Locust, k6, JMeter) against `/route` and `/anomaly`.
 
 ---
 
@@ -459,6 +560,9 @@ This repository now includes two workflows:
 3. Ensure workflow permissions allow writing packages (already set in workflow file).
 
 ### Notes
+
+- CI validates backend tests, frontend build, and compose syntax on each PR/push to `dev`.
+- CD builds and publishes container images, then deploys frontend via Vercel workflow.
 
 ---
 
