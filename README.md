@@ -2,6 +2,44 @@
 
 Multi-modal hyper-local routing engine that computes road-accurate routes around AUST, adapts to anomalies in real time, and uses a dedicated ML microservice for asynchronous route traffic risk prediction.
 
+## Judge Quick Read (2-3 Minutes)
+
+### Live Links
+
+- Main live domain: https://www.smartcommutebd.live/
+- Frontend (Vercel): https://aust-hackathon-26.vercel.app/
+- Backend (Azure): https://maploactor-eve5e0d5f5h0aqh8.southeastasia-01.azurewebsites.net/
+- Backend (Render): https://aust-hackathon-26.onrender.com/
+
+### What You Can Verify Quickly
+
+1. Compute a route and confirm road-following geometry.
+2. Add an anomaly and verify route adaptation.
+3. Confirm async traffic lifecycle (`loading -> ready`) from `route_id` polling.
+4. Compare multimodal fastest vs shortest route options in UI.
+
+### 5-Minute Judge Validation Path
+
+1. Open the live frontend and select origin/destination.
+2. Run single-mode route, then multimodal route.
+3. Inject an anomaly from the map and recompute.
+4. Observe traffic prediction status update.
+5. Optionally call `/health` and `/route` using commands in [Section 8](#8-execution-steps).
+
+### Evidence Map (Where to Read What)
+
+- Architecture and system design: [Section 3](#3-system-overview), [Section 4](#4-architecture-design)
+- API behavior and payload examples: [Section 6](#6-api-documentation)
+- Setup and execution: [Section 7](#7-setup-instructions-very-important), [Section 8](#8-execution-steps)
+- Design decisions and assumptions: [Section 9](#9-design-decisions), [Section 10](#10-assumptions)
+- Performance and scalability: [Section 11](#11-performance--scalability)
+- Full feature inventory for showcase: [Section 15](#15-hackathon-showcase-codebase-wide-feature-inventory)
+- CI/CD and deployment implementation: [Section 16](#16-cicd-and-deployment-implementation)
+
+### Important Scope Note for Judges
+
+- Authentication endpoints exist in code, but the primary judged flow is routing, anomaly adaptation, and ML-based traffic prediction.
+
 ## 1. Project Title
 
 ### GoliTransit - AI-Powered Multi-Modal Urban Routing
