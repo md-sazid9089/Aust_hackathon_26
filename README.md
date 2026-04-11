@@ -112,7 +112,7 @@ User Action (Frontend)
   -> Frontend map render + async traffic polling
 ```
 
-### ML Integration Flow (Highlighted)
+### ML Integration Flow (Traffic Prediction)
 
 - `/route` returns route geometry and `route_id` quickly.
 - `TrafficJamService` enqueues ML prediction work without blocking route computation.
