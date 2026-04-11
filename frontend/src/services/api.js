@@ -15,6 +15,9 @@
 
 import axios from 'axios';
 
+const NETWORK_ERROR_LOG_THROTTLE_MS = 5000;
+let lastNetworkErrorLogAt = 0;
+
 // ─── Base URL ───────────────────────────────────────────────────
 // In dev: Use relative paths, Vite proxy handles routing to backend
 // In prod: May need adjustment for deployed backend URL
@@ -42,7 +45,11 @@ apiClient.interceptors.response.use(
       return Promise.reject(new Error(detail));
     } else if (error.request) {
       // No response received
-      console.error('[API] No response from server. Is the backend running?');
+      const now = Date.now();
+      if (now - lastNetworkErrorLogAt > NETWORK_ERROR_LOG_THROTTLE_MS) {
+        console.error('[API] No response from server. Is the backend running?');
+        lastNetworkErrorLogAt = now;
+      }
       return Promise.reject(new Error('Backend unavailable. Please ensure the server is running.'));
     } else {
       console.error('[API] Request error:', error.message);

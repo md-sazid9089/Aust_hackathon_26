@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from database import engine, Base
 from models import user_models, traffic_models  # noqa: F401
-from routes import health, auth, route, anomaly, graph
+from routes import health, auth, route, anomaly, graph, traffic
 from routes.v2 import router as v2_router
 from services.graph_service import graph_service
 from services.traffic_jam_service import traffic_jam_service
@@ -29,7 +29,7 @@ from services.traffic_jam_service import traffic_jam_service
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    On startup: 
+    On startup:
       - Create database tables if they don't exist
       - Load the OSM road graph into memory
     On shutdown: clean up resources.
@@ -37,16 +37,21 @@ async def lifespan(app: FastAPI):
     print("[startup] Creating database tables...")
     Base.metadata.create_all(bind=engine)
     print("[startup] Database tables created/verified")
-    
+
     print("[startup] Loading road graph...")
     graph_service.load_graph()
-    print(f"[startup] Graph loaded — {graph_service.node_count()} nodes, {graph_service.edge_count()} edges")
+    print(
+        f"[startup] Graph loaded — {graph_service.node_count()} nodes, {graph_service.edge_count()} edges"
+    )
 
     print("[startup] Building dummy traffic dataset and training jam model...")
     traffic_jam_service.initialize_from_graph(graph_service.get_graph())
     print("[startup] Traffic jam model ready")
+    await traffic_jam_service.start_workers()
+    print("[startup] Traffic workers started")
     yield
     print("[shutdown] Cleaning up resources...")
+    await traffic_jam_service.stop_workers()
 
 
 # ─── App Initialization ──────────────────────────────────────────
@@ -71,6 +76,7 @@ app.add_middleware(
 app.include_router(health.router, tags=["Health"])
 app.include_router(auth.router, tags=["Authentication"])
 app.include_router(route.router, prefix="/route", tags=["Routing"])
+app.include_router(traffic.router, prefix="/traffic", tags=["Traffic"])
 app.include_router(anomaly.router, prefix="/anomaly", tags=["Anomaly"])
 app.include_router(graph.router, prefix="/graph", tags=["Graph"])
 app.include_router(v2_router, prefix="/v2", tags=["V2 — Multi-Modal Dijkstra"])

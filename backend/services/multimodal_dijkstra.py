@@ -28,6 +28,8 @@ FIXES APPLIED (audit):
 
 import heapq
 import math
+import os
+import time
 from typing import Optional
 
 
@@ -36,6 +38,121 @@ DEFAULT_SWITCH_PENALTY = 5
 
 # Minimum edge cost to prevent zero/negative weight issues
 MIN_EDGE_COST = 0.01
+
+_PROFILE_ENV = "ROUTING_PROFILE"
+_PROFILE_FALSE_VALUES = {"0", "false", "off", "no"}
+
+
+def _profiling_enabled() -> bool:
+    value = str(os.getenv(_PROFILE_ENV, "1")).strip().lower()
+    return value not in _PROFILE_FALSE_VALUES
+
+
+def _fmt_metric(value) -> str:
+    if isinstance(value, float):
+        return f"{value:.3f}"
+    return str(value)
+
+
+def _profile_log(stage: str, **metrics):
+    if not _profiling_enabled():
+        return
+    payload = " ".join(f"{k}={_fmt_metric(v)}" for k, v in metrics.items())
+    print(f"[Profile][MultiModalDijkstra] {stage} {payload}".rstrip())
+
+
+_TRANSIT_HIGHWAY_VALUES = {"bus_stop"}
+_TRANSIT_PUBLIC_TRANSPORT_VALUES = {
+    "platform",
+    "stop_position",
+    "station",
+    "stop_area",
+    "bus_station",
+}
+_TRANSIT_RAILWAY_VALUES = {"station", "halt", "tram_stop", "subway_entrance"}
+_TRANSIT_AMENITY_VALUES = {"bus_station", "ferry_terminal", "taxi"}
+_SWITCH_NODE_CACHE: dict[tuple[int, int, int], set] = {}
+
+
+def _to_text(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _safe_int(value: object, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _edge_allows_mode(edge_data: dict, constraints: dict, mode: str) -> bool:
+    keys = [f"{mode}_allowed"]
+    if mode == "walk":
+        keys.extend(["walking_allowed", "pedestrian_allowed"])
+
+    for key in keys:
+        if key in constraints:
+            return bool(constraints.get(key))
+        if key in edge_data:
+            return bool(edge_data.get(key))
+
+    # Constraint metadata absent -> treat as disallowed for safety.
+    return False
+
+
+def _edge_cost_for_mode(edge_data: dict, mode: str) -> float:
+    weights = edge_data.get("weights", {})
+    edge_cost = weights.get(mode)
+    if edge_cost is None:
+        edge_cost = float(
+            edge_data.get(f"{mode}_travel_time")
+            or edge_data.get("travel_time")
+            or edge_data.get("length", 1)
+        )
+    return max(float(edge_cost), MIN_EDGE_COST)
+
+
+def _build_valid_switch_nodes(graph) -> set:
+    """Precompute nodes where mode switches are permitted."""
+    cache_key = (id(graph), graph.number_of_nodes(), graph.number_of_edges())
+    cached = _SWITCH_NODE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    valid = set()
+    for node_id, node_data in graph.nodes(data=True):
+        if bool(node_data.get("is_switch_node", False)):
+            valid.add(node_id)
+            continue
+        if bool(node_data.get("is_transit_stop", False)):
+            valid.add(node_id)
+            continue
+
+        highway = _to_text(node_data.get("highway"))
+        public_transport = _to_text(node_data.get("public_transport"))
+        railway = _to_text(node_data.get("railway"))
+        amenity = _to_text(node_data.get("amenity"))
+
+        is_transit_node = (
+            highway in _TRANSIT_HIGHWAY_VALUES
+            or public_transport in _TRANSIT_PUBLIC_TRANSPORT_VALUES
+            or railway in _TRANSIT_RAILWAY_VALUES
+            or amenity in _TRANSIT_AMENITY_VALUES
+        )
+        street_count_raw = node_data.get("street_count")
+        if street_count_raw is not None:
+            is_junction = _safe_int(street_count_raw, default=0) >= 3
+        else:
+            is_junction = _safe_int(graph.degree(node_id), default=0) >= 3
+
+        if is_transit_node or is_junction:
+            valid.add(node_id)
+
+    _SWITCH_NODE_CACHE[cache_key] = valid
+    if len(_SWITCH_NODE_CACHE) > 8:
+        _SWITCH_NODE_CACHE.pop(next(iter(_SWITCH_NODE_CACHE)))
+
+    return valid
 
 
 def multi_modal_dijkstra(
@@ -63,13 +180,67 @@ def multi_modal_dijkstra(
           - cost: total traversal cost
           - path: list of step dicts {from, to, mode}
           - node_path: ordered list of node IDs
+          - stats: algorithm counters/timing for profiling
         Returns None if no path exists.
     """
+    started_at = time.perf_counter()
+    states_popped = 0
+    states_settled = 0
+    neighbor_pairs_scanned = 0
+    parallel_edges_seen = 0
+    mode_checks = 0
+    edges_processed = 0
+    constraint_rejections = 0
+    switch_checks = 0
+    switches_applied = 0
+    switch_rejections = 0
+    expansion_time_s = 0.0
+    switch_handling_time_s = 0.0
+    unique_nodes_visited = set()
+
+    def _stats(status: str) -> dict:
+        total_ms = (time.perf_counter() - started_at) * 1000.0
+        return {
+            "status": status,
+            "algorithm_time_ms": total_ms,
+            "states_popped": states_popped,
+            "states_settled": states_settled,
+            "nodes_visited": len(unique_nodes_visited),
+            "neighbor_pairs_scanned": neighbor_pairs_scanned,
+            "parallel_edges_seen": parallel_edges_seen,
+            "mode_checks": mode_checks,
+            "edges_processed": edges_processed,
+            "constraint_rejections": constraint_rejections,
+            "switch_checks": switch_checks,
+            "switches_applied": switches_applied,
+            "switch_rejections": switch_rejections,
+            "expansion_time_ms": expansion_time_s * 1000.0,
+            "switch_handling_time_ms": switch_handling_time_s * 1000.0,
+        }
+
     if start == end:
-        return {"cost": 0, "path": [], "node_path": [start]}
+        stats = _stats("start_equals_end")
+        _profile_log(
+            "complete",
+            status=stats["status"],
+            algorithm_time_ms=stats["algorithm_time_ms"],
+            nodes_visited=stats["nodes_visited"],
+            edges_processed=stats["edges_processed"],
+        )
+        return {"cost": 0, "path": [], "node_path": [start], "stats": stats}
 
     if not graph.has_node(start) or not graph.has_node(end):
+        stats = _stats("invalid_endpoints")
+        _profile_log(
+            "complete",
+            status=stats["status"],
+            algorithm_time_ms=stats["algorithm_time_ms"],
+            nodes_visited=stats["nodes_visited"],
+            edges_processed=stats["edges_processed"],
+        )
         return None
+
+    valid_switch_nodes = _build_valid_switch_nodes(graph)
 
     # Priority queue: (cost, counter, node, mode)
     # counter breaks ties for heapq stability
@@ -87,12 +258,31 @@ def multi_modal_dijkstra(
     counter += 1
     best_cost[(start, None)] = 0.0
 
+    edge_allows_mode = _edge_allows_mode
+    edge_cost_for_mode = _edge_cost_for_mode
+    push_heap = heapq.heappush
+
     while pq:
         cost, _, node, mode = heapq.heappop(pq)
+        states_popped += 1
+        unique_nodes_visited.add(node)
 
         # Reached destination — reconstruct path from predecessors
         if node == end:
-            return _reconstruct_path(predecessors, start, end, mode, cost)
+            result = _reconstruct_path(predecessors, start, end, mode, cost)
+            stats = _stats("ok")
+            result["stats"] = stats
+            _profile_log(
+                "complete",
+                status=stats["status"],
+                algorithm_time_ms=stats["algorithm_time_ms"],
+                nodes_visited=stats["nodes_visited"],
+                states_popped=stats["states_popped"],
+                edges_processed=stats["edges_processed"],
+                constraint_rejections=stats["constraint_rejections"],
+                switches_applied=stats["switches_applied"],
+            )
+            return result
 
         state = (node, mode)
 
@@ -100,50 +290,115 @@ def multi_modal_dijkstra(
         if cost > best_cost.get(state, float("inf")):
             continue
 
+        states_settled += 1
+        expansion_started = time.perf_counter()
+
         # Explore all neighbors via outgoing edges
-        for neighbor in graph.successors(node):
-            edge_data_dict = graph.get_edge_data(node, neighbor)
+        for neighbor, edge_data_dict in graph[node].items():
+            neighbor_pairs_scanned += 1
             if not edge_data_dict:
                 continue
 
-            # Pick the best parallel edge (lowest key)
-            edge_data = next(iter(edge_data_dict.values()))
+            edge_count = len(edge_data_dict)
+            parallel_edges_seen += edge_count
 
-            weights = edge_data.get("weights", {})
-            constraints = edge_data.get("constraints", {})
+            can_switch_here = (mode is None) or (node in valid_switch_nodes)
+            candidate_modes = allowed_modes if can_switch_here else [mode]
 
-            for next_mode in allowed_modes:
-                # ✔ Never route through restricted edges
-                if not constraints.get(f"{next_mode}_allowed", True):
+            if edge_count == 1:
+                edge_data = next(iter(edge_data_dict.values()))
+                constraints = edge_data.get("constraints", {})
+
+                for next_mode in candidate_modes:
+                    mode_checks += 1
+
+                    if not edge_allows_mode(edge_data, constraints, next_mode):
+                        constraint_rejections += 1
+                        continue
+
+                    edges_processed += 1
+                    best_mode_edge_cost = edge_cost_for_mode(edge_data, next_mode)
+
+                    # ✔ Mode switch penalty
+                    extra_penalty = 0.0
+                    if mode is not None:
+                        switch_checks += 1
+                        if mode != next_mode:
+                            if node not in valid_switch_nodes:
+                                switch_rejections += 1
+                                continue
+
+                            switch_started = time.perf_counter()
+                            extra_penalty = switch_penalty
+                            switches_applied += 1
+                            switch_handling_time_s += time.perf_counter() - switch_started
+
+                    new_cost = cost + best_mode_edge_cost + extra_penalty
+
+                    neighbor_state = (neighbor, next_mode)
+                    if new_cost < best_cost.get(neighbor_state, float("inf")):
+                        best_cost[neighbor_state] = new_cost
+                        predecessors[neighbor_state] = (node, mode, next_mode)
+                        push_heap(pq, (new_cost, counter, neighbor, next_mode))
+                        counter += 1
+
+                continue
+
+            for next_mode in candidate_modes:
+                mode_checks += 1
+                best_mode_edge_cost = None
+                for edge_data in edge_data_dict.values():
+                    constraints = edge_data.get("constraints", {})
+                    if not edge_allows_mode(edge_data, constraints, next_mode):
+                        constraint_rejections += 1
+                        continue
+
+                    edge_cost = edge_cost_for_mode(edge_data, next_mode)
+                    if best_mode_edge_cost is None or edge_cost < best_mode_edge_cost:
+                        best_mode_edge_cost = edge_cost
+
+                if best_mode_edge_cost is None:
                     continue
 
-                # Get traversal cost for this mode
-                edge_cost = weights.get(next_mode)
-                if edge_cost is None:
-                    edge_cost = float(
-                        edge_data.get(f"{next_mode}_travel_time")
-                        or edge_data.get("travel_time")
-                        or edge_data.get("length", 1)
-                    )
-
-                # ✔ Guard against negative/zero weights
-                edge_cost = max(float(edge_cost), MIN_EDGE_COST)
+                edges_processed += 1
 
                 # ✔ Mode switch penalty
                 extra_penalty = 0.0
-                if mode is not None and mode != next_mode:
-                    extra_penalty = switch_penalty
+                if mode is not None:
+                    switch_checks += 1
+                    if mode != next_mode:
+                        if node not in valid_switch_nodes:
+                            switch_rejections += 1
+                            continue
 
-                new_cost = cost + edge_cost + extra_penalty
+                        switch_started = time.perf_counter()
+                        extra_penalty = switch_penalty
+                        switches_applied += 1
+                        switch_handling_time_s += time.perf_counter() - switch_started
+
+                new_cost = cost + best_mode_edge_cost + extra_penalty
 
                 neighbor_state = (neighbor, next_mode)
                 if new_cost < best_cost.get(neighbor_state, float("inf")):
                     best_cost[neighbor_state] = new_cost
                     predecessors[neighbor_state] = (node, mode, next_mode)
-                    heapq.heappush(pq, (new_cost, counter, neighbor, next_mode))
+                    push_heap(pq, (new_cost, counter, neighbor, next_mode))
                     counter += 1
 
+        expansion_time_s += time.perf_counter() - expansion_started
+
     # No path found
+    stats = _stats("no_path")
+    _profile_log(
+        "complete",
+        status=stats["status"],
+        algorithm_time_ms=stats["algorithm_time_ms"],
+        nodes_visited=stats["nodes_visited"],
+        states_popped=stats["states_popped"],
+        edges_processed=stats["edges_processed"],
+        constraint_rejections=stats["constraint_rejections"],
+        switches_applied=stats["switches_applied"],
+    )
     return None
 
 
@@ -162,11 +417,13 @@ def _reconstruct_path(
     while current_state in predecessors:
         prev_node, prev_mode, edge_mode = predecessors[current_state]
         current_node = current_state[0]
-        path.append({
-            "from": prev_node,
-            "to": current_node,
-            "mode": edge_mode,
-        })
+        path.append(
+            {
+                "from": prev_node,
+                "to": current_node,
+                "mode": edge_mode,
+            }
+        )
         node_path.append(current_node)
         current_state = (prev_node, prev_mode)
 
@@ -292,4 +549,5 @@ def multi_modal_dijkstra_with_coords(
         "path": enriched_path,
         "node_path": result.get("node_path", []),
         "geometry": geometry,
+        "stats": result.get("stats", {}),
     }

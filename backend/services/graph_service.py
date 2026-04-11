@@ -7,13 +7,39 @@ Responsible for loading and serving the in-memory road graph.
 from __future__ import annotations
 
 import math
+import os
+import time
 from typing import Optional
 
 import networkx as nx
+import numpy as np
 import osmnx as ox
+from sklearn.neighbors import KDTree
 
 from config import settings
 from models.graph_models import GraphSnapshot, GraphNode, GraphEdge
+
+
+_PROFILE_ENV = "ROUTING_PROFILE"
+_PROFILE_FALSE_VALUES = {"0", "false", "off", "no"}
+
+
+def _profiling_enabled() -> bool:
+    value = str(os.getenv(_PROFILE_ENV, "1")).strip().lower()
+    return value not in _PROFILE_FALSE_VALUES
+
+
+def _fmt_metric(value) -> str:
+    if isinstance(value, float):
+        return f"{value:.3f}"
+    return str(value)
+
+
+def _profile_log(stage: str, **metrics):
+    if not _profiling_enabled():
+        return
+    payload = " ".join(f"{k}={_fmt_metric(v)}" for k, v in metrics.items())
+    print(f"[Profile][GraphService] {stage} {payload}".rstrip())
 
 
 def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -144,9 +170,19 @@ class GraphService:
         self._radius_m = float(settings.graph_radius_m)
         self._mode_subgraph_cache: dict[str, nx.MultiDiGraph] = {}
         self._graph_version: int = 0
+        self._node_ids: list = []
+        self._node_coords: np.ndarray | None = None
+        self._node_kdtree: KDTree | None = None
 
     def load_graph(self, location: Optional[str] = None):
         """Download/load OSM graph and normalize edge attributes for routing."""
+        load_started = time.perf_counter()
+        fetch_ms = 0.0
+        trim_ms = 0.0
+        normalize_ms = 0.0
+        mode_cache_ms = 0.0
+        spatial_index_ms = 0.0
+
         location = location or settings.osm_location
         print(
             f"[GraphService] Loading graph for: {location} "
@@ -156,6 +192,7 @@ class GraphService:
         graph: Optional[nx.MultiDiGraph] = None
 
         try:
+            fetch_started = time.perf_counter()
             if location != settings.osm_location:
                 graph = ox.graph_from_place(
                     location,
@@ -186,10 +223,14 @@ class GraphService:
                 if nodes_outside:
                     graph.remove_nodes_from(nodes_outside)
 
+            fetch_ms = (time.perf_counter() - fetch_started) * 1000.0
+
             # Keep only the largest connected component to avoid tiny disconnected scraps.
+            trim_started = time.perf_counter()
             if graph.number_of_nodes() > 0:
                 largest_cc = max(nx.weakly_connected_components(graph), key=len)
                 graph = graph.subgraph(largest_cc).copy()
+            trim_ms = (time.perf_counter() - trim_started) * 1000.0
         except Exception as e:
             raise RuntimeError(
                 f"Failed to load OSM graph around AUST center ({self._center_lat}, {self._center_lng})"
@@ -199,13 +240,83 @@ class GraphService:
             raise RuntimeError("Graph load failed: no graph returned")
 
         self._graph = graph
+        normalize_started = time.perf_counter()
         self._normalize_edge_attributes()
+        normalize_ms = (time.perf_counter() - normalize_started) * 1000.0
+
+        mode_cache_started = time.perf_counter()
         self._rebuild_mode_subgraph_cache()
+        mode_cache_ms = (time.perf_counter() - mode_cache_started) * 1000.0
+
+        spatial_index_started = time.perf_counter()
+        self._rebuild_spatial_index()
+        spatial_index_ms = (time.perf_counter() - spatial_index_started) * 1000.0
+
         self._graph_version = 1
         self._loaded = True
+
+        total_ms = (time.perf_counter() - load_started) * 1000.0
         print(
             f"[GraphService] Graph loaded — {self.node_count()} nodes, {self.edge_count()} edges"
         )
+        _profile_log(
+            "load_graph_complete",
+            location=location,
+            nodes=self.node_count(),
+            edges=self.edge_count(),
+            fetch_ms=fetch_ms,
+            trim_ms=trim_ms,
+            normalize_ms=normalize_ms,
+            subgraph_cache_ms=mode_cache_ms,
+            spatial_index_ms=spatial_index_ms,
+            total_ms=total_ms,
+        )
+
+    def _rebuild_spatial_index(self):
+        self._node_ids = []
+        self._node_coords = None
+        self._node_kdtree = None
+
+        if not self._graph or self._graph.number_of_nodes() == 0:
+            return
+
+        node_ids: list = []
+        coords: list[list[float]] = []
+        for node_id, node_data in self._graph.nodes(data=True):
+            y = node_data.get("y")
+            x = node_data.get("x")
+            if y is None or x is None:
+                continue
+            node_ids.append(node_id)
+            coords.append([float(y), float(x)])
+
+        if not node_ids:
+            return
+
+        arr = np.asarray(coords, dtype=float)
+        if arr.shape[0] == 0:
+            return
+
+        self._node_ids = node_ids
+        self._node_coords = arr
+        self._node_kdtree = KDTree(arr, leaf_size=40)
+
+    def _query_candidates_from_kdtree(self, lat: float, lng: float, k: int) -> list:
+        if self._node_kdtree is None or not self._node_ids:
+            return []
+
+        k = max(1, int(k))
+        k = min(k, len(self._node_ids))
+        if k <= 0:
+            return []
+
+        _dist, idx = self._node_kdtree.query(np.asarray([[lat, lng]], dtype=float), k=k)
+        indices = idx[0].tolist() if len(idx) > 0 else []
+        candidates = []
+        for i in indices:
+            if 0 <= i < len(self._node_ids):
+                candidates.append(self._node_ids[i])
+        return candidates
 
     def _rebuild_mode_subgraph_cache(self):
         self._mode_subgraph_cache = {}
@@ -220,7 +331,9 @@ class GraphService:
                 if bool(data.get(mode_flag, False))
             ]
             if edges:
-                self._mode_subgraph_cache[mode] = self._graph.edge_subgraph(edges).copy()
+                self._mode_subgraph_cache[mode] = self._graph.edge_subgraph(
+                    edges
+                ).copy()
             else:
                 self._mode_subgraph_cache[mode] = nx.MultiDiGraph()
 
@@ -375,6 +488,27 @@ class GraphService:
         if not self._graph:
             return None
 
+        # Fast path: KDTree candidate query, then exact Haversine ranking.
+        if self._node_kdtree is not None and self._node_ids:
+            candidates = self._query_candidates_from_kdtree(lat, lng, k=10)
+            best_node = None
+            best_dist_m = float("inf")
+            for node_id in candidates:
+                node_data = self._graph.nodes.get(node_id, {})
+                y = node_data.get("y")
+                x = node_data.get("x")
+                if y is None or x is None:
+                    continue
+                dist_m = _haversine_m(lat, lng, float(y), float(x))
+                if dist_m < best_dist_m:
+                    best_dist_m = dist_m
+                    best_node = node_id
+
+            if best_node is not None:
+                if best_dist_m > max_distance_m:
+                    return None
+                return best_node
+
         best_node = None
         best_dist_m = float("inf")
 
@@ -423,6 +557,26 @@ class GraphService:
         if graph is None or graph.number_of_nodes() == 0:
             return []
 
+        # Use KDTree index when querying against the base graph.
+        if graph is self._graph and self._node_kdtree is not None and self._node_ids:
+            # Over-query to offset euclidean(lat,lng) approximation before exact Haversine ranking.
+            requested = max(1, int(k))
+            overquery = min(len(self._node_ids), max(requested * 4, requested))
+            candidates = self._query_candidates_from_kdtree(lat, lng, k=overquery)
+
+            ranked = []
+            for node_id in candidates:
+                node_data = self._graph.nodes.get(node_id, {})
+                y = node_data.get("y")
+                x = node_data.get("x")
+                if y is None or x is None:
+                    continue
+                dist_m = _haversine_m(lat, lng, float(y), float(x))
+                ranked.append((dist_m, node_id))
+
+            ranked.sort(key=lambda t: t[0])
+            return [node_id for _, node_id in ranked[:requested]]
+
         ranked = []
         for node_id, node_data in graph.nodes(data=True):
             y = node_data.get("y")
@@ -444,6 +598,23 @@ class GraphService:
         """
         if not self._graph:
             return None, float("inf")
+
+        if self._node_kdtree is not None and self._node_ids:
+            candidates = self._query_candidates_from_kdtree(lat, lng, k=10)
+            best_node = None
+            best_dist_m = float("inf")
+            for node_id in candidates:
+                node_data = self._graph.nodes.get(node_id, {})
+                y = node_data.get("y")
+                x = node_data.get("x")
+                if y is None or x is None:
+                    continue
+                dist_m = _haversine_m(lat, lng, float(y), float(x))
+                if dist_m < best_dist_m:
+                    best_dist_m = dist_m
+                    best_node = node_id
+            if best_node is not None:
+                return best_node, best_dist_m
 
         best_node = None
         best_dist_m = float("inf")
@@ -531,21 +702,21 @@ class GraphService:
     def get_node_accessibility(self, node_id: str) -> list[str]:
         """
         Determine which transport modes can access a given node.
-        
+
         A node is accessible to a mode if at least one outgoing edge
         allows that mode (has mode_allowed=True).
-        
+
         Args:
             node_id: The node ID to check
-            
+
         Returns:
             List of mode strings (car, bike, walk, transit, rickshaw) that can access this node
         """
         if not self._graph or node_id not in self._graph:
             return []
-        
+
         accessible = set()
-        
+
         # Check all outgoing edges from this node
         if node_id in self._graph:
             for v, edge_dict in self._graph[node_id].items():
@@ -555,7 +726,7 @@ class GraphService:
                         mode_flag = f"{mode}_allowed"
                         if bool(data.get(mode_flag, False)):
                             accessible.add(mode)
-        
+
         # Also check incoming edges
         for u in self._graph.pred.get(node_id, {}):
             edge_dict = self._graph[u].get(node_id, {})
@@ -564,7 +735,7 @@ class GraphService:
                     mode_flag = f"{mode}_allowed"
                     if bool(data.get(mode_flag, False)):
                         accessible.add(mode)
-        
+
         return sorted(list(accessible))
 
     def get_subgraph_for_mode(self, mode: str):
@@ -645,16 +816,19 @@ class GraphService:
             self.mark_graph_changed(mode_constraints_changed=False)
 
     def get_snapshot(
-        self, include_edges: bool = False, bbox: Optional[tuple] = None, mode_filter: Optional[str] = None
+        self,
+        include_edges: bool = False,
+        bbox: Optional[tuple] = None,
+        mode_filter: Optional[str] = None,
     ) -> GraphSnapshot:
         """
         Get a snapshot of the graph, optionally filtered by transport mode.
-        
+
         Args:
             include_edges: If True, include full edge list
             bbox: Optional bounding box tuple (south, west, north, east)
             mode_filter: Optional mode to filter nodes by accessibility
-            
+
         Returns:
             GraphSnapshot with filtered nodes and edges
         """
@@ -697,17 +871,19 @@ class GraphService:
             if in_bbox(lat, lng):
                 # Compute accessible modes for this node
                 accessible_modes = self.get_node_accessibility(node_id)
-                
+
                 # Filter by mode if specified
                 if mode_filter is not None and mode_filter not in accessible_modes:
                     continue
-                
-                nodes.append(GraphNode(
-                    id=str(node_id),
-                    lat=lat,
-                    lng=lng,
-                    accessible_modes=accessible_modes
-                ))
+
+                nodes.append(
+                    GraphNode(
+                        id=str(node_id),
+                        lat=lat,
+                        lng=lng,
+                        accessible_modes=accessible_modes,
+                    )
+                )
 
         if include_edges:
             for u, v, _, data in self._graph.edges(keys=True, data=True):

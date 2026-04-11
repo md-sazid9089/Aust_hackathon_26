@@ -264,7 +264,47 @@ function RoutePanel({
           )}
 
           {/* Traffic jam chance */}
-          {routeResult.traffic_jam_prediction && (
+          {routeResult.traffic_status === 'loading' && (
+            <div style={{
+              padding: '10px 14px',
+              background: 'rgba(59,130,246,0.08)',
+              border: '1px solid rgba(59,130,246,0.25)',
+              borderRadius: 10,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              color: '#93c5fd',
+              fontSize: 12,
+              fontWeight: 700,
+            }}>
+              <span style={{
+                width: 12,
+                height: 12,
+                border: '2px solid rgba(147,197,253,0.35)',
+                borderTopColor: '#93c5fd',
+                borderRadius: '50%',
+                display: 'inline-block',
+                animation: 'spin 0.7s linear infinite',
+              }} />
+              Loading traffic...
+            </div>
+          )}
+
+          {routeResult.traffic_status === 'failed' && (
+            <div style={{
+              padding: '10px 14px',
+              background: 'rgba(239,68,68,0.08)',
+              border: '1px solid rgba(239,68,68,0.25)',
+              borderRadius: 10,
+              color: '#f87171',
+              fontSize: 12,
+              fontWeight: 700,
+            }}>
+              Traffic prediction failed. Route is still valid.
+            </div>
+          )}
+
+          {routeResult.traffic_status === 'ready' && routeResult.traffic_jam_prediction && (
             <div style={{
               padding: '10px 14px',
               background: 'rgba(59,130,246,0.08)',

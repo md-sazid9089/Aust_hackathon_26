@@ -66,6 +66,101 @@ def _build_test_graph():
     return G
 
 
+def _build_switch_gate_graph(non_junction: bool = True):
+    """
+    Build a graph where switching at B is only beneficial.
+
+    If B is not a valid switch node, best path must remain walk-only.
+    If B is a junction, switching at B should be allowed and cheaper.
+    """
+    G = nx.MultiDiGraph()
+
+    G.add_node("A", x=90.40, y=23.80)
+    G.add_node("B", x=90.41, y=23.80)
+    G.add_node("C", x=90.40, y=23.81)
+    G.add_node("D", x=90.41, y=23.81)
+    G.add_node("X", x=90.42, y=23.80)
+
+    # Path via B: cheap but requires car->walk switch at B.
+    G.add_edge(
+        "A",
+        "B",
+        key=0,
+        **{
+            "weights": {"car": 5, "walk": 100},
+            "constraints": {"car_allowed": True, "walk_allowed": True},
+            "travel_time": 5,
+            "car_travel_time": 5,
+            "walk_travel_time": 100,
+            "length": 200,
+            "base_weight": 200,
+        },
+    )
+    G.add_edge(
+        "B",
+        "D",
+        key=0,
+        **{
+            "weights": {"car": 100, "walk": 5},
+            "constraints": {"car_allowed": False, "walk_allowed": True},
+            "travel_time": 5,
+            "car_travel_time": 100,
+            "walk_travel_time": 5,
+            "length": 200,
+            "base_weight": 200,
+        },
+    )
+
+    # Walk-only fallback path.
+    G.add_edge(
+        "A",
+        "C",
+        key=0,
+        **{
+            "weights": {"car": 100, "walk": 25},
+            "constraints": {"car_allowed": False, "walk_allowed": True},
+            "travel_time": 25,
+            "car_travel_time": 100,
+            "walk_travel_time": 25,
+            "length": 400,
+            "base_weight": 400,
+        },
+    )
+    G.add_edge(
+        "C",
+        "D",
+        key=0,
+        **{
+            "weights": {"car": 100, "walk": 25},
+            "constraints": {"car_allowed": False, "walk_allowed": True},
+            "travel_time": 25,
+            "car_travel_time": 100,
+            "walk_travel_time": 25,
+            "length": 400,
+            "base_weight": 400,
+        },
+    )
+
+    if not non_junction:
+        # Make B a valid junction (degree >= 3).
+        G.add_edge(
+            "B",
+            "X",
+            key=0,
+            **{
+                "weights": {"car": 20, "walk": 20},
+                "constraints": {"car_allowed": True, "walk_allowed": True},
+                "travel_time": 20,
+                "car_travel_time": 20,
+                "walk_travel_time": 20,
+                "length": 200,
+                "base_weight": 200,
+            },
+        )
+
+    return G
+
+
 class TestMultiModalDijkstra:
     """Test suite for the multi-modal Dijkstra algorithm."""
 
@@ -168,6 +263,25 @@ class TestMultiModalDijkstra:
             assert "from_lng" in step
             assert "to_lat" in step
             assert "to_lng" in step
+
+    def test_switch_disallowed_on_non_switch_node(self):
+        """Mode changes should not occur at non-switch nodes."""
+        G = _build_switch_gate_graph(non_junction=True)
+        result = multi_modal_dijkstra(G, "A", "D", ["car", "walk"], switch_penalty=0)
+        assert result is not None
+        # Without a valid switch node at B, algorithm should stay walk-only via A->C->D.
+        assert result["cost"] == 50
+        assert all(step["mode"] == "walk" for step in result["path"])
+
+    def test_switch_allowed_on_junction_node(self):
+        """Mode changes should be allowed at valid junction nodes."""
+        G = _build_switch_gate_graph(non_junction=False)
+        result = multi_modal_dijkstra(G, "A", "D", ["car", "walk"], switch_penalty=0)
+        assert result is not None
+        # B is now a junction, so A->B (car) + B->D (walk) should be chosen.
+        assert result["cost"] == 10
+        modes = [step["mode"] for step in result["path"]]
+        assert "car" in modes and "walk" in modes
 
 
 if __name__ == "__main__":

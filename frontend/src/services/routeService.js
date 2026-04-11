@@ -60,6 +60,17 @@ export async function computeRoute({
 }
 
 /**
+ * Poll asynchronous traffic prediction for an existing route.
+ *
+ * @param {string} routeId
+ * @returns {Promise<{route_id:string,status:string,data?:object,error?:string}>}
+ */
+export async function getRouteTraffic(routeId) {
+  const response = await apiClient.get(`/traffic/${encodeURIComponent(routeId)}`);
+  return response.data;
+}
+
+/**
  * Compute route with demo scenario — applies preset anomalies then routes.
  *
  * @param {string} scenarioKey - Key from config.json demo_scenarios

@@ -10,7 +10,7 @@ import RoutePanel from '../components/RoutePanel';
 import ModeSelector from '../components/ModeSelector';
 import AnomalyAlert from '../components/AnomalyAlert';
 import AnomalyModal from '../components/AnomalyModal';
-import { computeRoute } from '../services/routeService';
+import { computeRoute, getRouteTraffic } from '../services/routeService';
 import { getGraphSnapshot, reportAnomaly, getAnomalies, clearAnomalies } from '../services/api';
 
 function MapPage({ apiStatus }) {
@@ -33,6 +33,11 @@ function MapPage({ apiStatus }) {
   const [isAnomalyPickMode, setIsAnomalyPickMode] = useState(false);
   const [isAnomalyPanelCollapsed, setIsAnomalyPanelCollapsed] = useState(true);
   const [lastRouteOptions, setLastRouteOptions] = useState({ includeMultimodal: false });
+
+  const isBackendOnline =
+    apiStatus?.status === 'healthy' ||
+    apiStatus?.status === 'ok' ||
+    apiStatus?.status === 'degraded';
 
   const dualRoute = (() => {
     const suggestions = Array.isArray(routeResult?.multimodal_suggestions)
@@ -72,7 +77,77 @@ function MapPage({ apiStatus }) {
   })();
 
   useEffect(() => {
+    const routeId = routeResult?.route_id;
+    const trafficStatus = routeResult?.traffic_status;
+    if (!routeId || trafficStatus !== 'loading') {
+      return undefined;
+    }
+
+    let canceled = false;
+    let timerId = null;
+
+    const pollTraffic = async () => {
+      try {
+        const payload = await getRouteTraffic(routeId);
+        if (canceled) {
+          return;
+        }
+
+        if (payload?.status === 'ready') {
+          setRouteResult((prev) => {
+            if (!prev || prev.route_id !== routeId) {
+              return prev;
+            }
+            return {
+              ...prev,
+              traffic_status: 'ready',
+              traffic_jam_prediction: payload?.data || null,
+            };
+          });
+          return;
+        }
+
+        if (payload?.status === 'failed') {
+          setRouteResult((prev) => {
+            if (!prev || prev.route_id !== routeId) {
+              return prev;
+            }
+            return {
+              ...prev,
+              traffic_status: 'failed',
+            };
+          });
+          return;
+        }
+      } catch (_err) {
+        // Keep polling for transient failures to preserve progressive loading UX.
+      }
+
+      if (!canceled) {
+        timerId = setTimeout(pollTraffic, 1200);
+      }
+    };
+
+    timerId = setTimeout(pollTraffic, 600);
+
+    return () => {
+      canceled = true;
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+    };
+  }, [routeResult?.route_id, routeResult?.traffic_status]);
+
+  useEffect(() => {
     let isMounted = true;
+    let anomalyTimerId = null;
+
+    if (!isBackendOnline) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
     const loadGraphNodes = async () => {
       try {
         // Load all nodes with accessibility info (don't filter server-side yet)
@@ -105,23 +180,27 @@ function MapPage({ apiStatus }) {
         if (!isMounted) return;
         const list = Array.isArray(data?.anomalies) ? data.anomalies : [];
         setAnomalies(list);
+        anomalyTimerId = setTimeout(fetchAnomalyState, 8000);
       } catch (err) {
         if (isMounted) {
           setAnomalies([]);
         }
+        // Back off when backend is flaky/offline to reduce noisy retries.
+        anomalyTimerId = setTimeout(fetchAnomalyState, 20000);
       }
     };
 
     loadGraphNodes();
-  loadGraphEdges();
+    loadGraphEdges();
     fetchAnomalyState();
-    const intervalId = setInterval(fetchAnomalyState, 8000);
 
     return () => {
       isMounted = false;
-      clearInterval(intervalId);
+      if (anomalyTimerId) {
+        clearTimeout(anomalyTimerId);
+      }
     };
-  }, []);
+  }, [isBackendOnline]);
 
   const nodeLookup = new Map(graphNodes.map((n) => [String(n.id), n]));
 
@@ -219,6 +298,11 @@ function MapPage({ apiStatus }) {
   const buildMultimodalModes = () => ['walk', 'transit', 'car', 'bike', 'rickshaw'];
 
   const handleComputeRoute = async (includeMultimodal = false) => {
+    if (!isBackendOnline) {
+      setError('Backend unavailable. Please ensure the server is running.');
+      return;
+    }
+
     if (!origin || !destination) {
       setError('Please set both origin and destination by clicking the map.');
       return;

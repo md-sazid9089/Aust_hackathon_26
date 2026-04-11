@@ -7,6 +7,7 @@ Computes shortest paths over the in-memory OSM road graph.
 from __future__ import annotations
 
 import math
+import os
 import time
 from collections import OrderedDict
 from typing import Callable
@@ -32,6 +33,28 @@ from services.anomaly_service import anomaly_service
 from services.traffic_jam_service import traffic_jam_service
 
 
+_PROFILE_ENV = "ROUTING_PROFILE"
+_PROFILE_FALSE_VALUES = {"0", "false", "off", "no"}
+
+
+def _profiling_enabled() -> bool:
+    value = str(os.getenv(_PROFILE_ENV, "1")).strip().lower()
+    return value not in _PROFILE_FALSE_VALUES
+
+
+def _fmt_metric(value) -> str:
+    if isinstance(value, float):
+        return f"{value:.3f}"
+    return str(value)
+
+
+def _profile_log(stage: str, **metrics):
+    if not _profiling_enabled():
+        return
+    payload = " ".join(f"{k}={_fmt_metric(v)}" for k, v in metrics.items())
+    print(f"[Profile][RoutingEngine] {stage} {payload}".rstrip())
+
+
 class RoutingEngine:
     """Singleton routing engine service."""
 
@@ -49,7 +72,7 @@ class RoutingEngine:
             OrderedDict()
         )
         self._route_response_cache_max = 512
-        self._route_response_ttl_s = 90.0
+        self._route_response_ttl_s = 60.0
 
     def _normalize_mode(self, mode: str) -> str:
         if mode == "bus":
@@ -76,17 +99,21 @@ class RoutingEngine:
     def _route_cache_key(
         self,
         request: RouteRequest,
-        origin_anchor,
-        destination_anchor,
     ) -> tuple:
+        origin_lat = round(float(request.origin.lat), 4)
+        origin_lng = round(float(request.origin.lng), 4)
+        dest_lat = round(float(request.destination.lat), 4)
+        dest_lng = round(float(request.destination.lng), 4)
         return (
             tuple(request.modes),
             str(request.optimize),
             bool(request.avoid_anomalies),
             int(request.max_alternatives or self._max_alts),
             bool(getattr(request, "include_multimodal", False)),
-            origin_anchor,
-            destination_anchor,
+            origin_lat,
+            origin_lng,
+            dest_lat,
+            dest_lng,
             self._current_graph_version(),
         )
 
@@ -133,11 +160,25 @@ class RoutingEngine:
         mode: str,
         optimize: str,
     ) -> tuple[dict, dict] | tuple[None, None]:
+        started_at = time.perf_counter()
         key = self._tree_cache_key(graph, origin_node, mode, optimize)
         cached = self._shortest_tree_cache.get(key)
         if cached is not None:
             lengths, paths, _ts = cached
             self._shortest_tree_cache.move_to_end(key)
+            try:
+                edges_processed = sum(int(graph.out_degree(node)) for node in lengths)
+            except Exception:
+                edges_processed = -1
+            _profile_log(
+                "shortest_tree_cache_hit",
+                mode=mode,
+                optimize=optimize,
+                origin_node=origin_node,
+                nodes_visited=len(lengths),
+                edges_processed=edges_processed,
+                runtime_ms=(time.perf_counter() - started_at) * 1000.0,
+            )
             return lengths, paths
 
         weight_fn = self._build_weight_fn(mode, optimize)
@@ -147,13 +188,35 @@ class RoutingEngine:
                 source=origin_node,
                 weight=weight_fn,
             )
-        except Exception:
+        except Exception as exc:
+            _profile_log(
+                "shortest_tree_failed",
+                mode=mode,
+                optimize=optimize,
+                origin_node=origin_node,
+                error=type(exc).__name__,
+                runtime_ms=(time.perf_counter() - started_at) * 1000.0,
+            )
             return None, None
 
         self._shortest_tree_cache[key] = (lengths, paths, time.monotonic())
         self._shortest_tree_cache.move_to_end(key)
         while len(self._shortest_tree_cache) > self._shortest_tree_cache_max:
             self._shortest_tree_cache.popitem(last=False)
+
+        try:
+            edges_processed = sum(int(graph.out_degree(node)) for node in lengths)
+        except Exception:
+            edges_processed = -1
+        _profile_log(
+            "shortest_tree_computed",
+            mode=mode,
+            optimize=optimize,
+            origin_node=origin_node,
+            nodes_visited=len(lengths),
+            edges_processed=edges_processed,
+            runtime_ms=(time.perf_counter() - started_at) * 1000.0,
+        )
 
         return lengths, paths
 
@@ -180,16 +243,47 @@ class RoutingEngine:
         return best_dest, best_path, best_cost
 
     async def compute(self, request: RouteRequest) -> RouteResponse:
+        request_started = time.perf_counter()
+        request_id = hex(time.perf_counter_ns() & 0xFFFFFFFF)[2:]
+        _profile_log(
+            "request_start",
+            request_id=request_id,
+            optimize=request.optimize,
+            modes="|".join(request.modes),
+            include_multimodal=bool(getattr(request, "include_multimodal", False)),
+        )
+
+        ml_refresh_started = time.perf_counter()
         await self._refresh_ml_weights()
+        ml_refresh_ms = (time.perf_counter() - ml_refresh_started) * 1000.0
+
+        anomaly_started = time.perf_counter()
         anomaly_service.sync_active_effects()
+        anomaly_sync_ms = (time.perf_counter() - anomaly_started) * 1000.0
 
         request.modes = [self._normalize_mode(m) for m in request.modes]
 
+        cache_lookup_started = time.perf_counter()
+        cache_key = self._route_cache_key(request)
+        cached_response = self._route_cache_get(cache_key)
+        cache_lookup_ms = (time.perf_counter() - cache_lookup_started) * 1000.0
+        if cached_response is not None:
+            total_ms = (time.perf_counter() - request_started) * 1000.0
+            _profile_log(
+                "request_cache_hit",
+                request_id=request_id,
+                total_ms=total_ms,
+                ml_refresh_ms=ml_refresh_ms,
+                anomaly_sync_ms=anomaly_sync_ms,
+                graph_hint_ms=0.0,
+                cache_lookup_ms=cache_lookup_ms,
+            )
+            return cached_response
+
+        graph_hint_started = time.perf_counter()
         full_graph = graph_service.get_graph()
         origin_candidates_hint: list = []
         destination_candidates_hint: list = []
-        origin_anchor = None
-        destination_anchor = None
 
         if full_graph is not None and full_graph.number_of_nodes() > 0:
             origin_candidates_hint = graph_service.get_k_nearest_nodes_in_graph(
@@ -204,16 +298,10 @@ class RoutingEngine:
                 request.destination.lng,
                 k=8,
             )
-            if origin_candidates_hint:
-                origin_anchor = origin_candidates_hint[0]
-            if destination_candidates_hint:
-                destination_anchor = destination_candidates_hint[0]
 
-        cache_key = self._route_cache_key(request, origin_anchor, destination_anchor)
-        cached_response = self._route_cache_get(cache_key)
-        if cached_response is not None:
-            return cached_response
+        graph_hint_ms = (time.perf_counter() - graph_hint_started) * 1000.0
 
+        routing_started = time.perf_counter()
         if len(request.modes) == 1:
             legs, switches, anomalies_avoided = await self._single_modal(
                 origin=request.origin,
@@ -234,7 +322,9 @@ class RoutingEngine:
                 origin_candidates_hint=origin_candidates_hint,
                 destination_candidates_hint=destination_candidates_hint,
             )
+        routing_ms = (time.perf_counter() - routing_started) * 1000.0
 
+        aggregate_started = time.perf_counter()
         total_dist = sum(leg.distance_m for leg in legs)
         total_dur = sum(leg.duration_s for leg in legs) + sum(
             sw.penalty_time_s for sw in switches
@@ -242,20 +332,44 @@ class RoutingEngine:
         total_cost = sum(leg.cost for leg in legs) + sum(
             sw.penalty_cost for sw in switches
         )
+        aggregate_ms = (time.perf_counter() - aggregate_started) * 1000.0
 
+        alternatives_started = time.perf_counter()
         num_alts = request.max_alternatives or self._max_alts
         alternatives = await self._compute_alternatives(request, num_alts)
+        alternatives_ms = (time.perf_counter() - alternatives_started) * 1000.0
 
-        multimodal_suggestions = (
-            self._compute_multimodal_suggestions(
-                request.origin,
-                request.destination,
-                fallback_legs=legs,
-            )
-            if bool(getattr(request, "include_multimodal", False))
-            else []
-        )
+        suggestions_started = time.perf_counter()
+        multimodal_suggestions: list[MultimodalSuggestion] = []
+        if bool(getattr(request, "include_multimodal", False)):
+            # Avoid duplicate state-space runs for multimodal requests by reusing the
+            # already computed route legs.
+            if len(request.modes) > 1:
+                fastest_from_legs = self._build_multimodal_suggestion_from_legs(
+                    legs,
+                    strategy="fastest_time",
+                )
+                if fastest_from_legs is not None:
+                    multimodal_suggestions.append(fastest_from_legs)
 
+                distance_from_legs = self._build_multimodal_suggestions_from_route_legs(
+                    legs
+                )
+                for suggestion in distance_from_legs:
+                    if all(
+                        existing.strategy != suggestion.strategy
+                        for existing in multimodal_suggestions
+                    ):
+                        multimodal_suggestions.append(suggestion)
+            else:
+                multimodal_suggestions = self._compute_multimodal_suggestions(
+                    request.origin,
+                    request.destination,
+                    fallback_legs=legs,
+                )
+        multimodal_suggestions_ms = (time.perf_counter() - suggestions_started) * 1000.0
+
+        traffic_edge_collect_started = time.perf_counter()
         all_traffic_edges: list[dict] = []
         for leg in legs:
             all_traffic_edges.extend(
@@ -268,11 +382,18 @@ class RoutingEngine:
                     for e in leg.traffic_edges
                 ]
             )
-        traffic_prediction = traffic_jam_service.predict_route_jam(
-            all_traffic_edges,
+        traffic_edge_collect_ms = (
+            time.perf_counter() - traffic_edge_collect_started
+        ) * 1000.0
+
+        traffic_dispatch_started = time.perf_counter()
+        traffic_job = traffic_jam_service.start_route_prediction(
+            edge_contexts=all_traffic_edges,
             hour_of_day=request.traffic_hour_of_day,
         )
+        traffic_dispatch_ms = (time.perf_counter() - traffic_dispatch_started) * 1000.0
 
+        response_build_started = time.perf_counter()
         response = RouteResponse(
             legs=[
                 RouteLeg(
@@ -301,10 +422,38 @@ class RoutingEngine:
             anomalies_avoided=anomalies_avoided,
             alternatives=alternatives,
             multimodal_suggestions=multimodal_suggestions,
-            traffic_jam_prediction=traffic_prediction,
+            traffic_jam_prediction=traffic_job.get("data"),
+            route_id=traffic_job.get("route_id"),
+            traffic_status=str(traffic_job.get("status") or "loading"),
         )
+        response_build_ms = (time.perf_counter() - response_build_started) * 1000.0
 
+        cache_set_started = time.perf_counter()
         self._route_cache_set(cache_key, response)
+        cache_set_ms = (time.perf_counter() - cache_set_started) * 1000.0
+
+        total_ms = (time.perf_counter() - request_started) * 1000.0
+        _profile_log(
+            "request_complete",
+            request_id=request_id,
+            total_ms=total_ms,
+            ml_refresh_ms=ml_refresh_ms,
+            anomaly_sync_ms=anomaly_sync_ms,
+            graph_hint_ms=graph_hint_ms,
+            cache_lookup_ms=cache_lookup_ms,
+            routing_ms=routing_ms,
+            aggregate_ms=aggregate_ms,
+            alternatives_ms=alternatives_ms,
+            multimodal_suggestions_ms=multimodal_suggestions_ms,
+            traffic_edge_collect_ms=traffic_edge_collect_ms,
+            traffic_dispatch_ms=traffic_dispatch_ms,
+            response_build_ms=response_build_ms,
+            cache_set_ms=cache_set_ms,
+            legs=len(legs),
+            switches=len(switches),
+            traffic_edges=len(all_traffic_edges),
+            anomalies_avoided=anomalies_avoided,
+        )
         return response
 
     async def _single_modal(
@@ -319,6 +468,33 @@ class RoutingEngine:
     ) -> tuple[list[RouteLeg], list[ModeSwitch], int]:
         del avoid_anomalies  # Placeholder until anomaly filtering is added.
 
+        single_started = time.perf_counter()
+        edge_filter_ms = 0.0
+        candidate_resolution_ms = 0.0
+        routing_search_ms = 0.0
+        geometry_build_ms = 0.0
+        dijkstra_runs = 0
+        used_undirected = False
+        used_full_graph_fallback = False
+        request_tree_cache: dict[tuple, tuple[dict, dict] | tuple[None, None]] = {}
+
+        def _log_single(status: str, **extra):
+            payload = {
+                "mode": mode,
+                "optimize": optimize,
+                "status": status,
+                "total_ms": (time.perf_counter() - single_started) * 1000.0,
+                "edge_filter_ms": edge_filter_ms,
+                "candidate_resolution_ms": candidate_resolution_ms,
+                "routing_search_ms": routing_search_ms,
+                "geometry_build_ms": geometry_build_ms,
+                "dijkstra_runs": dijkstra_runs,
+                "used_undirected": used_undirected,
+                "used_full_graph_fallback": used_full_graph_fallback,
+            }
+            payload.update(extra)
+            _profile_log("single_modal_complete", **payload)
+
         if mode not in settings.vehicle_types:
             raise ValueError(
                 f"Unknown transport mode: '{mode}'. Available: {list(settings.vehicle_types.keys())}"
@@ -327,8 +503,10 @@ class RoutingEngine:
         if not graph_service.is_loaded():
             # Graph not loaded yet - return synthetic route
             leg = self._build_synthetic_leg(mode, origin, destination)
+            _log_single("graph_not_loaded")
             return [leg], [], 0
 
+        edge_filter_started = time.perf_counter()
         mode_graph = graph_service.get_subgraph_for_mode(mode)
         full_graph = graph_service.get_graph()
         graph = mode_graph
@@ -338,8 +516,12 @@ class RoutingEngine:
             graph = full_graph
         if graph is None or graph.number_of_nodes() == 0:
             leg = self._build_synthetic_leg(mode, origin, destination)
+            edge_filter_ms = (time.perf_counter() - edge_filter_started) * 1000.0
+            _log_single("empty_graph")
             return [leg], [], 0
+        edge_filter_ms = (time.perf_counter() - edge_filter_started) * 1000.0
 
+        candidate_started = time.perf_counter()
         if origin_candidates_hint:
             origin_candidates = [n for n in origin_candidates_hint if n in graph]
         else:
@@ -358,23 +540,43 @@ class RoutingEngine:
             dest_candidates = graph_service.get_k_nearest_nodes_in_graph(
                 graph, destination.lat, destination.lng, k=8
             )
+        candidate_resolution_ms = (time.perf_counter() - candidate_started) * 1000.0
 
         if not origin_candidates or not dest_candidates:
             leg = self._build_synthetic_leg(mode, origin, destination)
+            _log_single(
+                "missing_candidates",
+                origin_candidates=len(origin_candidates),
+                destination_candidates=len(dest_candidates),
+            )
             return [leg], [], 0
 
         def _find_best_path(candidate_graph, max_origins: int = 2):
+            nonlocal dijkstra_runs
             best_pair = None
             best_path = None
             best_cost = float("inf")
             origins_to_try = origin_candidates[: max(1, int(max_origins))]
             for origin_node in origins_to_try:
-                lengths, paths = self._get_shortest_path_tree(
-                    candidate_graph,
+                tree_key = (
+                    id(candidate_graph),
                     origin_node,
                     mode,
                     optimize,
+                    self._current_graph_version(),
                 )
+                cached_tree = request_tree_cache.get(tree_key)
+                if cached_tree is None:
+                    dijkstra_runs += 1
+                    cached_tree = self._get_shortest_path_tree(
+                        candidate_graph,
+                        origin_node,
+                        mode,
+                        optimize,
+                    )
+                    request_tree_cache[tree_key] = cached_tree
+
+                lengths, paths = cached_tree
                 if lengths is None or paths is None:
                     continue
 
@@ -387,8 +589,12 @@ class RoutingEngine:
                     best_cost = cost
                     best_pair = (origin_node, dest_node)
                     best_path = path
+                    # Latency-first path selection: stop at first feasible origin
+                    # and rely on fallback branches only when no path exists.
+                    break
             return best_pair, best_path
 
+        routing_started = time.perf_counter()
         routing_graph = graph
         best_pair, best_path = _find_best_path(routing_graph, max_origins=2)
 
@@ -396,6 +602,7 @@ class RoutingEngine:
         # make reachable roads appear disconnected. Retry on undirected topology
         # before falling back to synthetic geometry.
         if best_path is None:
+            used_undirected = True
             routing_graph = graph.to_undirected(as_view=True)
             best_pair, best_path = _find_best_path(routing_graph, max_origins=3)
 
@@ -409,6 +616,7 @@ class RoutingEngine:
             and full_graph.number_of_nodes() > 0
             and full_graph is not mode_graph
         ):
+            used_full_graph_fallback = True
             graph = full_graph
             if origin_candidates_hint:
                 origin_candidates = [n for n in origin_candidates_hint if n in graph]
@@ -427,8 +635,11 @@ class RoutingEngine:
             routing_graph = graph
             best_pair, best_path = _find_best_path(routing_graph, max_origins=2)
             if best_path is None:
+                used_undirected = True
                 routing_graph = graph.to_undirected(as_view=True)
                 best_pair, best_path = _find_best_path(routing_graph, max_origins=3)
+
+        routing_search_ms = (time.perf_counter() - routing_started) * 1000.0
 
         if best_path is None:
             # If the points are essentially colocated, return a zero-length leg.
@@ -448,8 +659,10 @@ class RoutingEngine:
                         "Origin and destination are at the same location.",
                     ],
                 )
+                _log_single("colocated")
                 return [leg], [], 0
             leg = self._build_synthetic_leg(mode, origin, destination)
+            _log_single("no_graph_path")
             return [leg], [], 0
 
         origin_node, dest_node = best_pair
@@ -457,13 +670,16 @@ class RoutingEngine:
         if path is None:
             # No path found in graph - return synthetic direct route
             leg = self._build_synthetic_leg(mode, origin, destination)
+            _log_single("null_path")
             return [leg], [], 0
 
         if len(path) < 2:
             # Degenerate graph path - return synthetic direct route
             leg = self._build_synthetic_leg(mode, origin, destination)
+            _log_single("degenerate_path", path_nodes=len(path))
             return [leg], [], 0
 
+        geometry_started = time.perf_counter()
         geometry: list[LatLng] = []
         traffic_edges: list[RouteTrafficEdge] = []
         total_distance_m = 0.0
@@ -503,9 +719,12 @@ class RoutingEngine:
             else:
                 geometry.extend(edge_points)
 
+        geometry_build_ms = (time.perf_counter() - geometry_started) * 1000.0
+
         if len(geometry) < 2:
             # Degenerate geometry from graph edges - return synthetic direct route
             leg = self._build_synthetic_leg(mode, origin, destination)
+            _log_single("degenerate_geometry", path_edges=max(0, len(path) - 1))
             return [leg], [], 0
 
         cost_per_km = float(
@@ -526,6 +745,14 @@ class RoutingEngine:
                 f"Arrive at ({destination.lat:.5f}, {destination.lng:.5f})",
             ],
         )
+        _log_single(
+            "graph_route",
+            path_nodes=len(path),
+            path_edges=max(0, len(path) - 1),
+            geometry_points=len(geometry),
+            origin_node=origin_node,
+            destination_node=dest_node,
+        )
         return [leg], [], 0
 
     async def _multi_modal(
@@ -538,11 +765,17 @@ class RoutingEngine:
         origin_candidates_hint: list | None = None,
         destination_candidates_hint: list | None = None,
     ) -> tuple[list[RouteLeg], list[ModeSwitch], int]:
+        multi_started = time.perf_counter()
+        node_resolution_ms = 0.0
+        state_space_ms = 0.0
+        fallback_reason = "state_space_no_path"
+
         graph = graph_service.get_graph()
         if graph is not None and graph.number_of_nodes() > 0:
             origin_node = None
             dest_node = None
 
+            node_resolution_started = time.perf_counter()
             if origin_candidates_hint:
                 for node_id in origin_candidates_hint:
                     if node_id in graph:
@@ -560,6 +793,9 @@ class RoutingEngine:
                 dest_node = graph_service.get_nearest_node(
                     destination.lat, destination.lng
                 )
+            node_resolution_ms = (
+                time.perf_counter() - node_resolution_started
+            ) * 1000.0
 
             allowed_modes = list(dict.fromkeys(modes))
             switch_penalty = float(
@@ -567,6 +803,7 @@ class RoutingEngine:
             )
 
             if origin_node is not None and dest_node is not None and allowed_modes:
+                state_space_started = time.perf_counter()
                 try:
                     result = multi_modal_dijkstra_with_coords(
                         graph=graph,
@@ -575,17 +812,51 @@ class RoutingEngine:
                         allowed_modes=allowed_modes,
                         switch_penalty=switch_penalty,
                     )
+                    state_space_ms = (
+                        time.perf_counter() - state_space_started
+                    ) * 1000.0
+                    stats = result.get("stats", {}) if result else {}
                     if result and result.get("path"):
-                        return self._build_multimodal_from_state_path(
+                        _profile_log(
+                            "multi_modal_state_space",
+                            status=stats.get("status", "ok"),
+                            algorithm_time_ms=stats.get(
+                                "algorithm_time_ms", state_space_ms
+                            ),
+                            nodes_visited=stats.get("nodes_visited", -1),
+                            edges_processed=stats.get("edges_processed", -1),
+                            mode_checks=stats.get("mode_checks", -1),
+                            switches_applied=stats.get("switches_applied", -1),
+                        )
+                        built = self._build_multimodal_from_state_path(
                             graph=graph,
                             origin=origin,
                             destination=destination,
                             path_steps=result["path"],
                         )
-                except Exception:
-                    pass
+                        _profile_log(
+                            "multi_modal_complete",
+                            strategy="state_space",
+                            total_ms=(time.perf_counter() - multi_started) * 1000.0,
+                            node_resolution_ms=node_resolution_ms,
+                            state_space_ms=state_space_ms,
+                            legs=len(built[0]),
+                            switches=len(built[1]),
+                        )
+                        return built
+                    fallback_reason = str(stats.get("status", "state_space_empty_path"))
+                except Exception as exc:
+                    state_space_ms = (
+                        time.perf_counter() - state_space_started
+                    ) * 1000.0
+                    fallback_reason = f"state_space_error:{type(exc).__name__}"
+            else:
+                fallback_reason = "missing_nodes_or_modes"
+        else:
+            fallback_reason = "graph_unavailable"
 
-        return await self._multi_modal_sequential(
+        sequential_started = time.perf_counter()
+        result = await self._multi_modal_sequential(
             origin=origin,
             destination=destination,
             modes=modes,
@@ -594,6 +865,19 @@ class RoutingEngine:
             origin_candidates_hint=origin_candidates_hint,
             destination_candidates_hint=destination_candidates_hint,
         )
+        sequential_ms = (time.perf_counter() - sequential_started) * 1000.0
+        _profile_log(
+            "multi_modal_complete",
+            strategy="sequential_fallback",
+            reason=fallback_reason,
+            total_ms=(time.perf_counter() - multi_started) * 1000.0,
+            node_resolution_ms=node_resolution_ms,
+            state_space_ms=state_space_ms,
+            sequential_ms=sequential_ms,
+            legs=len(result[0]),
+            switches=len(result[1]),
+        )
+        return result
 
     async def _multi_modal_sequential(
         self,
@@ -605,9 +889,12 @@ class RoutingEngine:
         origin_candidates_hint: list | None = None,
         destination_candidates_hint: list | None = None,
     ) -> tuple[list[RouteLeg], list[ModeSwitch], int]:
+        sequential_started = time.perf_counter()
         legs: list[RouteLeg] = []
         switches: list[ModeSwitch] = []
         total_anomalies_avoided = 0
+        single_modal_ms = 0.0
+        mode_switch_handling_ms = 0.0
 
         current_pos = origin
         for i, mode in enumerate(modes):
@@ -617,6 +904,7 @@ class RoutingEngine:
                 else self._find_transfer_point(current_pos, destination, i, len(modes))
             )
 
+            leg_started = time.perf_counter()
             leg_legs, _, avoided = await self._single_modal(
                 origin=current_pos,
                 destination=leg_dest,
@@ -628,10 +916,12 @@ class RoutingEngine:
                     destination_candidates_hint if i == len(modes) - 1 else None
                 ),
             )
+            single_modal_ms += (time.perf_counter() - leg_started) * 1000.0
             legs.extend(leg_legs)
             total_anomalies_avoided += avoided
 
             if i < len(modes) - 1:
+                switch_started = time.perf_counter()
                 next_mode = modes[i + 1]
                 penalty_key = f"{mode}_to_{next_mode}"
                 penalty = settings.mode_switch_penalties.get(penalty_key, {})
@@ -644,9 +934,21 @@ class RoutingEngine:
                         penalty_cost=float(penalty.get("cost_units", 0.0) or 0.0),
                     )
                 )
+                mode_switch_handling_ms += (
+                    time.perf_counter() - switch_started
+                ) * 1000.0
 
             current_pos = leg_dest
 
+        _profile_log(
+            "multi_modal_sequential_complete",
+            modes="|".join(modes),
+            total_ms=(time.perf_counter() - sequential_started) * 1000.0,
+            single_modal_ms=single_modal_ms,
+            mode_switch_handling_ms=mode_switch_handling_ms,
+            legs=len(legs),
+            switches=len(switches),
+        )
         return legs, switches, total_anomalies_avoided
 
     def _build_multimodal_from_state_path(
@@ -656,10 +958,22 @@ class RoutingEngine:
         destination: LatLng,
         path_steps: list[dict],
     ) -> tuple[list[RouteLeg], list[ModeSwitch], int]:
+        state_path_started = time.perf_counter()
+        mode_switch_handling_ms = 0.0
+        edge_processing_ms = 0.0
         legs: list[RouteLeg] = []
         switches: list[ModeSwitch] = []
 
         if not path_steps:
+            _profile_log(
+                "state_path_build_complete",
+                status="empty_path",
+                total_ms=(time.perf_counter() - state_path_started) * 1000.0,
+                mode_switch_handling_ms=mode_switch_handling_ms,
+                edge_processing_ms=edge_processing_ms,
+                legs=len(legs),
+                switches=len(switches),
+            )
             return legs, switches, 0
 
         current_mode = None
@@ -707,6 +1021,7 @@ class RoutingEngine:
             if current_mode is None:
                 current_mode = step_mode
             elif step_mode != current_mode:
+                switch_started = time.perf_counter()
                 _finalize_leg(current_mode)
                 switch_loc = LatLng(
                     lat=float(graph.nodes.get(u, {}).get("y") or 0.0),
@@ -724,11 +1039,14 @@ class RoutingEngine:
                     )
                 )
                 current_mode = step_mode
+                mode_switch_handling_ms += (
+                    time.perf_counter() - switch_started
+                ) * 1000.0
 
+            edge_started = time.perf_counter()
             edge_data = self._best_edge_for_mode(graph, u, v, step_mode)
             if not edge_data:
-                edge_data = self._best_edge_any(graph, u, v)
-            if not edge_data:
+                edge_processing_ms += (time.perf_counter() - edge_started) * 1000.0
                 continue
 
             current_distance_m += float(edge_data.get("length") or 0.0)
@@ -758,6 +1076,8 @@ class RoutingEngine:
             else:
                 current_geometry.extend(edge_points)
 
+            edge_processing_ms += (time.perf_counter() - edge_started) * 1000.0
+
         if current_mode is not None:
             _finalize_leg(current_mode)
 
@@ -774,12 +1094,30 @@ class RoutingEngine:
                     f"Arrive at ({destination.lat:.5f}, {destination.lng:.5f})"
                 )
 
+        _profile_log(
+            "state_path_build_complete",
+            status="ok",
+            total_ms=(time.perf_counter() - state_path_started) * 1000.0,
+            mode_switch_handling_ms=mode_switch_handling_ms,
+            edge_processing_ms=edge_processing_ms,
+            path_steps=len(path_steps),
+            legs=len(legs),
+            switches=len(switches),
+        )
+
         return legs, switches, 0
 
     def _build_weight_fn(self, mode: str, optimize: str) -> Callable:
         def weight(u, v, data):
             best = float("inf")
             for edge in data.values():
+                mode_allowed = bool(edge.get(f"{mode}_allowed", False))
+                if mode == "walk":
+                    mode_allowed = bool(
+                        edge.get("walk_allowed", edge.get("walking_allowed", edge.get("pedestrian_allowed", False)))
+                    )
+                if not mode_allowed:
+                    continue
                 length = float(edge.get("length") or 0.0)
                 travel_time = float(
                     edge.get(f"{mode}_travel_time") or edge.get("travel_time") or 0.0
@@ -1030,7 +1368,9 @@ class RoutingEngine:
                 SegmentSuggestion(
                     segment_index=idx,
                     distance_m=float(leg.distance_m or 0.0),
-                    road_type=(leg.traffic_edges[0].road_type if leg.traffic_edges else "mixed"),
+                    road_type=(
+                        leg.traffic_edges[0].road_type if leg.traffic_edges else "mixed"
+                    ),
                     recommended_vehicle=self._display_mode(str(leg.mode or "walk")),
                     geometry=list(leg.geometry or []),
                     vehicle_options=[
@@ -1127,11 +1467,13 @@ class RoutingEngine:
                 switch_penalty=switch_penalty,
             )
             if time_result and time_result.get("path"):
-                built_legs, _switches, _avoided = self._build_multimodal_from_state_path(
-                    graph=graph,
-                    origin=origin,
-                    destination=destination,
-                    path_steps=time_result["path"],
+                built_legs, _switches, _avoided = (
+                    self._build_multimodal_from_state_path(
+                        graph=graph,
+                        origin=origin,
+                        destination=destination,
+                        path_steps=time_result["path"],
+                    )
                 )
                 time_suggestion = self._build_multimodal_suggestion_from_legs(
                     built_legs,
@@ -1258,10 +1600,21 @@ class RoutingEngine:
         data = graph.get_edge_data(u, v) or {}
         if not data:
             return {}
-        allowed = [e for e in data.values() if bool(e.get(f"{mode}_allowed", False))]
-        pool = allowed or list(data.values())
+        if mode == "walk":
+            allowed = [
+                e
+                for e in data.values()
+                if bool(
+                    e.get("walk_allowed", e.get("walking_allowed", e.get("pedestrian_allowed", False)))
+                )
+            ]
+        else:
+            allowed = [e for e in data.values() if bool(e.get(f"{mode}_allowed", False))]
+        if not allowed:
+            return {}
+
         return min(
-            pool,
+            allowed,
             key=lambda e: max(
                 float(e.get(f"{mode}_travel_time") or e.get("travel_time") or 0.0),
                 0.01,
@@ -1294,10 +1647,20 @@ class RoutingEngine:
         return options
 
     async def _refresh_ml_weights(self):
+        started = time.perf_counter()
         try:
             await ml_integration.refresh_predictions()
+            _profile_log(
+                "ml_refresh_complete",
+                runtime_ms=(time.perf_counter() - started) * 1000.0,
+            )
         except Exception as e:
             print(f"[RoutingEngine] ML weight refresh failed (using defaults): {e}")
+            _profile_log(
+                "ml_refresh_failed",
+                runtime_ms=(time.perf_counter() - started) * 1000.0,
+                error=type(e).__name__,
+            )
 
 
 routing_engine = RoutingEngine()

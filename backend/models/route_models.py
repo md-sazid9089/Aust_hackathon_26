@@ -9,11 +9,12 @@ Used by:
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Literal
 
 
 class LatLng(BaseModel):
     """Geographic coordinate."""
+
     lat: float = Field(..., ge=-90, le=90, description="Latitude")
     lng: float = Field(..., ge=-180, le=180, description="Longitude")
 
@@ -26,6 +27,7 @@ class RouteRequest(BaseModel):
     For multi-modal: modes = ["walk", "transit", "walk"]
     The order of modes defines the sequence of legs.
     """
+
     origin: LatLng
     destination: LatLng
     modes: list[str] = Field(
@@ -60,6 +62,7 @@ class RouteRequest(BaseModel):
 
 class RouteLeg(BaseModel):
     """A single leg of a route (one transport mode)."""
+
     mode: str = Field(..., description="Transport mode for this leg")
     geometry: list[LatLng] = Field(
         default_factory=list,
@@ -88,6 +91,7 @@ class RouteTrafficEdge(BaseModel):
 
 class ModeSwitch(BaseModel):
     """Represents a mode transfer point between two legs."""
+
     from_mode: str
     to_mode: str
     location: LatLng
@@ -137,6 +141,7 @@ class TrafficJamPrediction(BaseModel):
 
 class RouteResponse(BaseModel):
     """Full response for a route computation."""
+
     legs: list[RouteLeg]
     mode_switches: list[ModeSwitch] = Field(default_factory=list)
     total_distance_m: float = 0.0
@@ -157,3 +162,22 @@ class RouteResponse(BaseModel):
         default=None,
         description="Predicted chance (percentage) of facing traffic jam on the selected route at current hour",
     )
+    route_id: Optional[str] = Field(
+        default=None,
+        description="Opaque ID used to fetch asynchronous traffic prediction status.",
+    )
+    traffic_status: Literal["loading", "ready", "failed", "unavailable"] = Field(
+        default="unavailable",
+        description="Traffic prediction lifecycle state for this route.",
+    )
+
+
+class RouteTrafficStatusResponse(BaseModel):
+    route_id: str
+    status: Literal["loading", "ready", "failed"]
+    job_status: Literal["pending", "running", "completed", "failed"]
+    retry_count: int = 0
+    max_retries: int = 0
+    updated_at: float = 0.0
+    data: Optional[TrafficJamPrediction] = None
+    error: Optional[str] = None
