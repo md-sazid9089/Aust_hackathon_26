@@ -1011,6 +1011,50 @@ class RoutingEngine:
             )
         ]
 
+    def _build_multimodal_suggestion_from_legs(
+        self,
+        route_legs: list[RouteLeg],
+        strategy: str,
+    ) -> MultimodalSuggestion | None:
+        if not route_legs:
+            return None
+
+        segments: list[SegmentSuggestion] = []
+        total_distance_m = 0.0
+        total_duration_s = 0.0
+
+        for idx, leg in enumerate(route_legs):
+            if not leg.geometry:
+                continue
+            segments.append(
+                SegmentSuggestion(
+                    segment_index=idx,
+                    distance_m=float(leg.distance_m or 0.0),
+                    road_type=(leg.traffic_edges[0].road_type if leg.traffic_edges else "mixed"),
+                    recommended_vehicle=self._display_mode(str(leg.mode or "walk")),
+                    geometry=list(leg.geometry or []),
+                    vehicle_options=[
+                        VehicleOption(
+                            vehicle=self._display_mode(str(leg.mode or "walk")),
+                            travel_time_s=float(leg.duration_s or 0.0),
+                            allowed=True,
+                        )
+                    ],
+                )
+            )
+            total_distance_m += float(leg.distance_m or 0.0)
+            total_duration_s += float(leg.duration_s or 0.0)
+
+        if not segments:
+            return None
+
+        return MultimodalSuggestion(
+            strategy=strategy,
+            total_distance_m=total_distance_m,
+            total_duration_s=total_duration_s,
+            segments=segments,
+        )
+
     def _select_preferred_mode_by_hierarchy(self, edge_data: dict) -> str:
         # Required hierarchy:
         # Bus > Car > Bike > Rickshaw > Walk
@@ -1048,8 +1092,7 @@ class RoutingEngine:
 
         suggestions: list[MultimodalSuggestion] = []
 
-        # Build exactly one suggestion from the distance-optimal route.
-        # Each segment picks the fastest allowed vehicle on that same path.
+        # 1) Distance-optimal route.
         try:
             dist_path = nx.shortest_path(
                 graph,
@@ -1067,6 +1110,35 @@ class RoutingEngine:
                 strategy="shortest_distance",
             )
             suggestions.append(dist_suggestion)
+        except Exception:
+            pass
+
+        # 2) Time-optimal route. Build from the same allowed-mode state-space search
+        # so the map can show a distinct alternative route in multimodal mode.
+        try:
+            switch_penalty = float(
+                settings.mode_switch_penalties.get("default_penalty_seconds", 5.0)
+            )
+            time_result = multi_modal_dijkstra_with_coords(
+                graph=graph,
+                start=origin_node,
+                end=dest_node,
+                allowed_modes=modes,
+                switch_penalty=switch_penalty,
+            )
+            if time_result and time_result.get("path"):
+                built_legs, _switches, _avoided = self._build_multimodal_from_state_path(
+                    graph=graph,
+                    origin=origin,
+                    destination=destination,
+                    path_steps=time_result["path"],
+                )
+                time_suggestion = self._build_multimodal_suggestion_from_legs(
+                    built_legs,
+                    strategy="fastest_time",
+                )
+                if time_suggestion is not None:
+                    suggestions.append(time_suggestion)
         except Exception:
             pass
 
