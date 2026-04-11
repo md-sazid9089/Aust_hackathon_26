@@ -13,32 +13,15 @@
 import { useState, useEffect } from 'react';
 import HomePage from './pages/HomePage';
 import MapPage from './pages/MapPage';
-import LoginPage from './pages/LoginPage';
-import SignUpPage from './pages/SignUpPage';
 import Footer from './components/Footer';
-import { checkHealth, initializeAuth } from './services/api';
+import { checkHealth } from './services/api';
 
 function App() {
-  const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'map' | 'login' | 'signup'
+  const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'map'
   const [apiStatus, setApiStatus] = useState(null);       // health check result
-  const [user, setUser] = useState(null);                 // current logged-in user
 
-  // Initialize auth and check backend health on mount
+  // Check backend health on mount
   useEffect(() => {
-    // Initialize auth token from localStorage if available
-    initializeAuth();
-    
-    // Load user from localStorage if available
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch (e) {
-        console.error('Failed to parse saved user:', e);
-      }
-    }
-    
-    // Check backend health
     checkHealth()
       .then(setApiStatus)
       .catch(() => setApiStatus({ status: 'offline' }));
@@ -62,13 +45,12 @@ function App() {
       {/* ══════════════════════════════════════════════════
           NAVBAR — floating pill bar, z-index 100
           On the map page this floats above the full-screen map.
-          Hidden on login and signup pages
       ══════════════════════════════════════════════════ */}
       <header style={{
         position: 'fixed', top: 0, left: 0, right: 0,
         zIndex: 100,
         padding: '10px 20px',
-        display: (currentPage === 'login' || currentPage === 'signup') ? 'none' : 'flex',
+        display: 'flex',
         justifyContent: 'center',
         pointerEvents: 'none',           /* let clicks pass through padding area */
       }}>
@@ -116,36 +98,6 @@ function App() {
               </div>
             </div>
           </div>
-
-          {/* Nav links */}
-          <button
-            id="nav-home"
-            onClick={() => setCurrentPage('home')}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 999, fontSize: 13, fontWeight: 500,
-              border: 'none', cursor: 'pointer',
-              background: currentPage === 'home' ? 'rgba(255,255,255,0.10)' : 'transparent',
-              color: currentPage === 'home' ? '#fff' : '#737373',
-              transition: 'all 0.18s ease',
-            }}
-          >
-            Dashboard
-          </button>
-          <button
-            id="nav-map"
-            onClick={() => setCurrentPage('map')}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 999, fontSize: 13, fontWeight: 500,
-              border: 'none', cursor: 'pointer',
-              background: currentPage === 'map' ? 'rgba(255,255,255,0.10)' : 'transparent',
-              color: currentPage === 'map' ? '#fff' : '#737373',
-              transition: 'all 0.18s ease',
-            }}
-          >
-            Route Map
-          </button>
 
           {/* Launch CTA — green */}
           <button
@@ -197,34 +149,6 @@ function App() {
             </span>
           </div>
 
-          {/* Get Started Button */}
-          <button
-            id="nav-get-started"
-            onClick={() => setCurrentPage('login')}
-            style={{
-              padding: '7px 18px',
-              borderRadius: 999, fontSize: 13, fontWeight: 600,
-              border: 'none', cursor: 'pointer',
-              background: 'linear-gradient(135deg, rgba(168,85,247,0.30), rgba(99,102,241,0.30))',
-              color: '#c4b5fd',
-              boxShadow: '0 2px 8px rgba(168,85,247,0.20)',
-              transition: 'all 0.18s ease',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(168,85,247,0.40), rgba(99,102,241,0.40))';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(168,85,247,0.35)';
-              e.currentTarget.style.transform = 'scale(1.02)';
-            }}
-            onMouseLeave={e => {
-              if (currentPage !== 'login' && currentPage !== 'signup') {
-                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(168,85,247,0.30), rgba(99,102,241,0.30))';
-                e.currentTarget.style.boxShadow = '0 2px 8px rgba(168,85,247,0.20)';
-                e.currentTarget.style.transform = 'scale(1)';
-              }
-            }}
-          >
-            Get Started
-          </button>
         </div>
       </header>
 
@@ -235,21 +159,17 @@ function App() {
       ══════════════════════════════════════════════════ */}
       <main style={{
         flex: 1, position: 'relative', display: 'flex', flexDirection: 'column',
-        paddingTop: isMapPage || currentPage === 'login' || currentPage === 'signup' ? 0 : 0,
+        paddingTop: 0,
       }}>
         {currentPage === 'home' ? (
           <HomePage onNavigateToMap={() => setCurrentPage('map')} apiStatus={apiStatus} />
-        ) : currentPage === 'login' ? (
-          <LoginPage onNavigateToHome={() => setCurrentPage('home')} onNavigateToSignUp={() => setCurrentPage('signup')} />
-        ) : currentPage === 'signup' ? (
-          <SignUpPage onNavigateToHome={() => setCurrentPage('home')} onNavigateToLogin={() => setCurrentPage('login')} />
         ) : (
-          <MapPage apiStatus={apiStatus} />
+          <MapPage apiStatus={apiStatus} onGoBack={() => setCurrentPage('home')} />
         )}
       </main>
 
-      {/* Footer — hidden on map and login pages */}
-      {!isMapPage && currentPage !== 'login' && currentPage !== 'signup' && (
+      {/* Footer — hidden on map page */}
+      {!isMapPage && (
         <Footer />
       )}
     </div>

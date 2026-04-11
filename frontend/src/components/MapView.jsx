@@ -1,31 +1,27 @@
 /*
  * MapView - Leaflet Map Wrapper Component
  * ==========================================
- * Renders an interactive Leaflet map with:
- *   - OpenStreetMap tile layer
- *   - Origin/destination markers
- *   - Route polyline visualization (from API response geometry)
- *   - Click handler for setting origin/destination
- *   - Custom FAB zoom controls (replaces default Leaflet controls)
+ * Renders map, markers, and backend-provided route geometry.
  */
 
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMapEvents, Popup, useMap } from 'react-leaflet';
+import { useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 
-const SEGMENT_MODE_COLORS = {
-  bus: '#ffffff',      // white
-  transit: '#ffffff',  // white alias
-  car: '#ef4444',      // red
-  bike: '#facc15',     // yellow
-  rickshaw: '#22c55e', // green
-  walk: '#a855f7',     // purple
+const ROUTE_VIEW_COLORS = {
+  fastest: '#2563eb',
+  shortest: '#6b7280',
+  overlap: '#4b5563',
 };
 
-const DUAL_ROUTE_COLORS = {
-  fastest: '#6d28d9',  // deep purple
-  shortest: '#db2777', // deep pink
+const VEHICLE_MODE_COLORS = {
+  walk: '#8b5cf6',
+  rickshaw: '#22c55e',
+  transit: '#f59e0b',
+  bus: '#f59e0b',
+  car: '#ef4444',
+  bike: '#06b6d4',
 };
 
 const SINGLE_MODE_COLORS = {
@@ -37,13 +33,12 @@ const SINGLE_MODE_COLORS = {
   transit: '#ef4444',
 };
 
-// Mode-specific node colors for visualization
 const MODE_NODE_COLORS = {
-  car: '#ef4444',      // red
-  bike: '#22c55e',     // green
-  walk: '#f97316',     // orange
-  transit: '#3b82f6',  // blue
-  rickshaw: '#facc15', // yellow
+  car: '#ef4444',
+  bike: '#22c55e',
+  walk: '#f97316',
+  transit: '#3b82f6',
+  rickshaw: '#facc15',
 };
 
 const originIcon = new L.DivIcon({
@@ -70,6 +65,181 @@ const destIcon = new L.DivIcon({
   iconAnchor: [10, 10],
 });
 
+const isValidCoordinate = (lat, lng) => (
+  Number.isFinite(lat)
+  && Number.isFinite(lng)
+  && Math.abs(lat) <= 90
+  && Math.abs(lng) <= 180
+);
+
+const toPointPair = (point) => {
+  if (Array.isArray(point) && point.length >= 2) {
+    const lat = Number(point[0]);
+    const lng = Number(point[1]);
+    return isValidCoordinate(lat, lng) ? [lat, lng] : null;
+  }
+
+  const lat = Number(point?.lat);
+  const lng = Number(point?.lng);
+  return isValidCoordinate(lat, lng) ? [lat, lng] : null;
+};
+
+const sanitizePositions = (geometry) => {
+  if (!Array.isArray(geometry)) {
+    return [];
+  }
+
+  const normalized = geometry
+    .map(toPointPair)
+    .filter(Boolean);
+
+  const deduped = [];
+  normalized.forEach((point) => {
+    const prev = deduped[deduped.length - 1];
+    if (!prev || prev[0] !== point[0] || prev[1] !== point[1]) {
+      deduped.push(point);
+    }
+  });
+
+  return deduped;
+};
+
+const haversineMeters = (a, b) => {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const earthRadiusM = 6371000;
+  const dLat = toRad(b[0] - a[0]);
+  const dLng = toRad(b[1] - a[1]);
+  const lat1 = toRad(a[0]);
+  const lat2 = toRad(b[0]);
+
+  const x = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  const y = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+
+  return earthRadiusM * y;
+};
+
+const edgeKey = (from, to) => {
+  const fmt = ([lat, lng]) => `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  const a = fmt(from);
+  const b = fmt(to);
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+};
+
+const buildRouteRenderData = (route, routeKey) => {
+  if (!route || !Array.isArray(route.segments)) {
+    return null;
+  }
+
+  const orderedEdges = [];
+  const segmentPolylines = [];
+  let previousEnd = null;
+
+  for (let i = 0; i < route.segments.length; i += 1) {
+    const segment = route.segments[i];
+    const positions = sanitizePositions(segment?.geometry);
+
+    if (positions.length < 2) {
+      continue;
+    }
+
+    if (previousEnd && haversineMeters(previousEnd, positions[0]) > 5000) {
+      console.error(`[MapView] ${routeKey} route continuity check failed between segments.`);
+      return null;
+    }
+
+    for (let j = 1; j < positions.length; j += 1) {
+      const from = positions[j - 1];
+      const to = positions[j];
+
+      if (haversineMeters(from, to) > 15000) {
+        console.error(`[MapView] ${routeKey} route continuity check failed inside segment ${i}.`);
+        return null;
+      }
+
+      orderedEdges.push({
+        key: edgeKey(from, to),
+        from,
+        to,
+      });
+    }
+
+    segmentPolylines.push({
+      key: `${routeKey}-segment-${i}`,
+      mode: segment?.mode || 'walk',
+      positions,
+    });
+
+    previousEnd = positions[positions.length - 1];
+  }
+
+  if (!orderedEdges.length) {
+    console.error(`[MapView] ${routeKey} route has no valid coordinates for rendering.`);
+    return null;
+  }
+
+  return { orderedEdges, segmentPolylines };
+};
+
+const buildInitialComparisonPolylines = (fastestData, shortestData) => {
+  const fastestKeys = new Set(fastestData.orderedEdges.map((edge) => edge.key));
+  const shortestKeys = new Set(shortestData.orderedEdges.map((edge) => edge.key));
+  const shared = new Set(
+    Array.from(fastestKeys).filter((key) => shortestKeys.has(key))
+  );
+
+  const buildChunks = (routeKey, routeData, includeShared) => {
+    const chunks = [];
+    let current = null;
+
+    routeData.orderedEdges.forEach((edge, index) => {
+      const isShared = shared.has(edge.key);
+      if (isShared && !includeShared) {
+        if (current) {
+          chunks.push(current);
+          current = null;
+        }
+        return;
+      }
+
+      const chunkType = isShared ? 'overlap' : routeKey;
+      const color = isShared
+        ? ROUTE_VIEW_COLORS.overlap
+        : routeKey === 'fastest'
+          ? ROUTE_VIEW_COLORS.fastest
+          : ROUTE_VIEW_COLORS.shortest;
+
+      if (!current || current.type !== chunkType) {
+        if (current) {
+          chunks.push(current);
+        }
+
+        current = {
+          key: `${routeKey}-${chunkType}-${index}`,
+          routeKey,
+          type: chunkType,
+          color,
+          clickable: !isShared,
+          positions: [edge.from, edge.to],
+        };
+      } else {
+        current.positions.push(edge.to);
+      }
+    });
+
+    if (current) {
+      chunks.push(current);
+    }
+
+    return chunks;
+  };
+
+  return [
+    ...buildChunks('fastest', fastestData, true),
+    ...buildChunks('shortest', shortestData, false),
+  ];
+};
+
 function MapClickHandler({ onMapClick }) {
   useMapEvents({
     click(e) {
@@ -79,68 +249,7 @@ function MapClickHandler({ onMapClick }) {
   return null;
 }
 
-function getProgressivePositions(positions, progress) {
-  if (!Array.isArray(positions) || positions.length < 2) {
-    return positions || [];
-  }
-
-  const p = Math.max(0, Math.min(1, Number(progress) || 0));
-  if (p >= 1) {
-    return positions;
-  }
-
-  const totalSegments = positions.length - 1;
-  const scaled = p * totalSegments;
-  const fullSegments = Math.floor(scaled);
-  const frac = scaled - fullSegments;
-
-  const revealed = positions.slice(0, fullSegments + 1);
-  const from = positions[fullSegments];
-  const to = positions[Math.min(fullSegments + 1, totalSegments)];
-  const interp = [
-    from[0] + (to[0] - from[0]) * frac,
-    from[1] + (to[1] - from[1]) * frac,
-  ];
-
-  if (revealed.length === 1) {
-    return [revealed[0], interp];
-  }
-
-  return [...revealed, interp];
-}
-
-function offsetPolylinePositions(positions, offsetMeters = 0) {
-  if (!Array.isArray(positions) || positions.length < 2 || !offsetMeters) {
-    return positions || [];
-  }
-
-  const metersToLat = offsetMeters / 111320;
-  const offsetPositions = [];
-
-  for (let i = 0; i < positions.length; i++) {
-    const current = positions[i];
-    const prev = positions[Math.max(0, i - 1)];
-    const next = positions[Math.min(positions.length - 1, i + 1)];
-
-    const dx = next[1] - prev[1];
-    const dy = next[0] - prev[0];
-    const length = Math.sqrt(dx * dx + dy * dy) || 1;
-    const perpX = -dy / length;
-    const perpY = dx / length;
-
-    const latOffset = metersToLat * perpY;
-    const lngOffset = metersToLat * perpX / Math.max(Math.cos((current[0] * Math.PI) / 180), 0.25);
-
-    offsetPositions.push([
-      current[0] + latOffset,
-      current[1] + lngOffset,
-    ]);
-  }
-
-  return offsetPositions;
-}
-
-function MapFABControls({ defaultCenter, defaultZoom }) {
+function MapFABControls() {
   const map = useMap();
   const container = map.getContainer();
 
@@ -205,28 +314,18 @@ function MapFABControls({ defaultCenter, defaultZoom }) {
       >
         -
       </button>
-
-      <button
-        style={{ ...fabBase, fontSize: 16 }}
-        onClick={() => map.setView(defaultCenter, defaultZoom)}
-        onMouseEnter={onEnter}
-        onMouseLeave={onLeave}
-        title="Recenter"
-      >
-        o
-      </button>
     </div>,
     container
   );
 }
 
-// ─── Main MapView Component ───────────────────────────────────────
-
 function MapView({
   origin,
   destination,
   routeResult,
-  dualRoute,
+  comparisonRoutes,
+  selectedComparisonRoute,
+  onSelectComparisonRoute,
   routeMode,
   selectedMode,
   graphNodes,
@@ -240,145 +339,51 @@ function MapView({
   onOriginDrag,
   onDestinationDrag,
 }) {
-  // Default center: Ahsanullah University of Science and Technology area
   const defaultCenter = [23.7639, 90.4066];
   const defaultZoom = 14;
 
-  const selectedComparisonRoute = useMemo(() => {
-    if (routeMode === 'min_time') return dualRoute?.min_time_route || null;
-    if (routeMode === 'min_distance') return dualRoute?.min_distance_route || null;
-    return null;
-  }, [routeMode, dualRoute]);
-
-  const routeCoords =
-    selectedComparisonRoute?.segments?.flatMap((segment) =>
-      segment.geometry?.map((point) => [point.lat, point.lng]) || []
-    ) || routeResult?.legs?.flatMap((leg) => leg.geometry?.map((point) => [point.lat, point.lng]) || []) || [];
-
   const singleModeLineColor = SINGLE_MODE_COLORS[selectedMode] || '#22c55e';
-  const [drawProgress, setDrawProgress] = useState(1);
 
-  const coloredSegments = useMemo(() => {
-    if (routeMode === 'multimodal' && dualRoute) {
-      const routes = [
-        {
-          key: 'min_time_route',
-          route: dualRoute.min_time_route,
-          color: DUAL_ROUTE_COLORS.fastest,
-          offset: -2.5,
-        },
-        {
-          key: 'min_distance_route',
-          route: dualRoute.min_distance_route,
-          color: DUAL_ROUTE_COLORS.shortest,
-          offset: 2.5,
-        },
-      ];
-
-      return routes
-        .filter(({ route }) => route && Array.isArray(route.segments))
-        .flatMap(({ key, route, color }) =>
-          route.segments
-            .filter((segment) => Array.isArray(segment.geometry) && segment.geometry.length >= 2)
-            .map((segment, idx) => ({
-              key: `${key}-${idx}`,
-              mode: segment.recommended_vehicle || segment.mode,
-              color,
-              positions: segment.geometry.map((point) => [point.lat, point.lng]),
-              offset: key === 'min_time_route' ? -2.5 : 2.5,
-            }))
-        );
+  const comparisonRenderData = useMemo(() => {
+    if (routeMode !== 'multimodal' || !comparisonRoutes?.fastest || !comparisonRoutes?.shortest) {
+      return null;
     }
 
-    if (routeMode !== 'multimodal') {
-      return [];
+    const fastest = buildRouteRenderData(comparisonRoutes.fastest, 'fastest');
+    const shortest = buildRouteRenderData(comparisonRoutes.shortest, 'shortest');
+
+    if (!fastest || !shortest) {
+      return null;
     }
 
-    const legSegments = (routeResult?.legs || [])
-      .filter((leg) => Array.isArray(leg.geometry) && leg.geometry.length >= 2)
-      .map((leg, idx) => ({
-        key: `leg-${idx}`,
-        mode: leg.mode,
-        color: SEGMENT_MODE_COLORS[leg.mode] || '#22c55e',
-        positions: leg.geometry.map((p) => [p.lat, p.lng]),
-      }));
-
-    if (legSegments.length > 0) {
-      return legSegments;
-    }
-
-    const suggestions = routeResult?.multimodal_suggestions || [];
-    if (!Array.isArray(suggestions) || suggestions.length === 0) {
-      return [];
-    }
-
-    const shortest = suggestions.find((s) => s.strategy === 'shortest_distance');
-    const fastest = suggestions.find((s) => s.strategy === 'fastest_time');
-    const chosen = shortest || fastest;
-    if (!chosen || !Array.isArray(chosen.segments)) {
-      return [];
-    }
-
-    return chosen.segments
-      .filter((seg) => Array.isArray(seg.geometry) && seg.geometry.length >= 2)
-      .map((seg, idx) => ({
-        key: `seg-${idx}`,
-        mode: seg.recommended_vehicle,
-        color: SEGMENT_MODE_COLORS[seg.recommended_vehicle] || '#22c55e',
-        positions: seg.geometry.map((p) => [p.lat, p.lng]),
-      }));
-  }, [routeResult, routeMode, dualRoute]);
-
-  const routeAnimationKey = useMemo(() => {
-    const legKey = (routeMode === 'multimodal' && dualRoute)
-      ? [
-          dualRoute.min_time_route,
-          dualRoute.min_distance_route,
-        ]
-          .filter(Boolean)
-          .map((route) => `${route.total_distance}:${route.total_time}:${(route.segments || []).length}`)
-          .join('|')
-      : selectedComparisonRoute
-        ? `${selectedComparisonRoute.total_distance}:${selectedComparisonRoute.total_time}:${(selectedComparisonRoute.segments || []).length}`
-      : (routeResult?.legs || [])
-      .map((leg) => `${leg.mode}:${(leg.geometry || []).length}`)
-      .join('|');
-    return `${routeMode || 'single'}::${legKey}::${routeCoords.length}`;
-  }, [routeMode, routeResult, dualRoute, selectedComparisonRoute, routeCoords.length]);
-
-  useEffect(() => {
-    const hasRouteToAnimate =
-      (coloredSegments.length > 0 && coloredSegments.some((s) => (s.positions || []).length >= 2))
-      || routeCoords.length >= 2;
-
-    if (!hasRouteToAnimate) {
-      setDrawProgress(1);
-      return;
-    }
-
-    setDrawProgress(0);
-    const pointCount = Math.max(
-      routeCoords.length,
-      ...coloredSegments.map((s) => (s.positions || []).length),
-      2
-    );
-    const durationMs = Math.min(2200, Math.max(700, pointCount * 14));
-    const startedAt = performance.now();
-    let rafId = 0;
-
-    const animate = (now) => {
-      const elapsed = now - startedAt;
-      const linear = Math.max(0, Math.min(1, elapsed / durationMs));
-      const eased = 1 - Math.pow(1 - linear, 3);
-      setDrawProgress(eased);
-      if (linear < 1) {
-        rafId = requestAnimationFrame(animate);
-      }
+    return {
+      fastest,
+      shortest,
+      initialPolylines: buildInitialComparisonPolylines(fastest, shortest),
     };
+  }, [routeMode, comparisonRoutes]);
 
-    rafId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(rafId);
-  }, [routeAnimationKey, coloredSegments, routeCoords.length]);
+  const selectedVehiclePolylines = useMemo(() => {
+    if (!comparisonRenderData || !selectedComparisonRoute) {
+      return [];
+    }
+
+    const selected = selectedComparisonRoute === 'shortest'
+      ? comparisonRenderData.shortest
+      : comparisonRenderData.fastest;
+
+    return selected.segmentPolylines.map((segment) => ({
+      key: segment.key,
+      color: VEHICLE_MODE_COLORS[segment.mode] || '#38bdf8',
+      positions: segment.positions,
+    }));
+  }, [comparisonRenderData, selectedComparisonRoute]);
+
+  const singleModeRoutePositions = useMemo(() => {
+    const legs = Array.isArray(routeResult?.legs) ? routeResult.legs : [];
+    const positions = legs.flatMap((leg) => sanitizePositions(leg?.geometry || []));
+    return positions;
+  }, [routeResult]);
 
   const originDragHandlers = useMemo(
     () => ({
@@ -404,9 +409,8 @@ function MapView({
     [onDestinationDrag]
   );
 
-  // Filter nodes by selected mode and compute their visualization
   const filteredNodes = useMemo(() => {
-    if (!graphNodes || !Array.isArray(graphNodes)) return [];
+    if (!Array.isArray(graphNodes)) return [];
 
     if (routeMode === 'multimodal') {
       return graphNodes.map((node) => ({
@@ -418,22 +422,18 @@ function MapView({
     }
 
     return graphNodes
-      .filter((node) => {
-        // Show node if it's accessible by the current mode
-        return node.accessible_modes && node.accessible_modes.includes(selectedMode);
-      })
+      .filter((node) => node.accessible_modes && node.accessible_modes.includes(selectedMode))
       .map((node) => ({
         ...node,
         position: [node.lat, node.lng],
         color: MODE_NODE_COLORS[selectedMode] || '#60a5fa',
-        // Calculate opacity based on how many modes can access this node
         opacity: Math.min(0.9, 0.5 + (node.accessible_modes.length * 0.1)),
       }));
   }, [graphNodes, selectedMode, routeMode]);
 
   const nodeLookup = useMemo(() => {
     const map = new Map();
-    (graphNodes || []).forEach((n) => map.set(String(n.id), n));
+    (graphNodes || []).forEach((node) => map.set(String(node.id), node));
     return map;
   }, [graphNodes]);
 
@@ -441,37 +441,27 @@ function MapView({
     if (!Array.isArray(graphEdges) || graphEdges.length === 0) {
       return [];
     }
+
     const affected = new Set(anomalyEdgeIds || []);
     const highlighted = [];
 
     const anomalyByEdge = new Map();
-    (anomalies || []).forEach((a) => {
-      (a.edge_ids || a.affected_edges || []).forEach((eid) => {
-        if (!anomalyByEdge.has(eid)) {
-          anomalyByEdge.set(eid, []);
+    (anomalies || []).forEach((anomaly) => {
+      (anomaly.edge_ids || anomaly.affected_edges || []).forEach((edgeIdValue) => {
+        if (!anomalyByEdge.has(edgeIdValue)) {
+          anomalyByEdge.set(edgeIdValue, []);
         }
-        anomalyByEdge.get(eid).push(a);
+        anomalyByEdge.get(edgeIdValue).push(anomaly);
       });
     });
 
     graphEdges.forEach((edge, idx) => {
-      const edgeId = `${edge.source}->${edge.target}`;
-      if (!affected.has(edgeId) && edgeId !== selectedAnomalyEdgeId) {
+      const edgeIdValue = `${edge.source}->${edge.target}`;
+      if (!affected.has(edgeIdValue) && edgeIdValue !== selectedAnomalyEdgeId) {
         return;
       }
 
-      let positions = [];
-      if (Array.isArray(edge.geometry) && edge.geometry.length >= 2) {
-        positions = edge.geometry
-          .map((pt) => {
-            if (Array.isArray(pt) && pt.length >= 2) {
-              return [Number(pt[0]), Number(pt[1])];
-            }
-            return null;
-          })
-          .filter(Boolean);
-      }
-
+      let positions = sanitizePositions(edge.geometry || []);
       if (positions.length < 2) {
         const src = nodeLookup.get(String(edge.source));
         const dst = nodeLookup.get(String(edge.target));
@@ -484,9 +474,9 @@ function MapView({
       highlighted.push({
         key: `anomaly-edge-${idx}`,
         positions,
-        selected: edgeId === selectedAnomalyEdgeId,
-        edgeId,
-        anomalies: anomalyByEdge.get(edgeId) || [],
+        selected: edgeIdValue === selectedAnomalyEdgeId,
+        edgeId: edgeIdValue,
+        anomalies: anomalyByEdge.get(edgeIdValue) || [],
       });
     });
 
@@ -515,15 +505,13 @@ function MapView({
       zoomControl={false}
       preferCanvas={true}
     >
-      {/* ─── Base tile layer ──────────────────────────────── */}
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
       />
 
       <MapClickHandler onMapClick={onMapClick} />
-      <MapFABControls defaultCenter={defaultCenter} defaultZoom={defaultZoom} />
-
+      <MapFABControls />
 
       {origin && (
         <Marker position={[origin.lat, origin.lng]} icon={originIcon} draggable eventHandlers={originDragHandlers}>
@@ -554,36 +542,57 @@ function MapView({
         </Marker>
       )}
 
-      {coloredSegments.length > 0 ? (
-        coloredSegments.map((seg) => (
+      {routeMode === 'multimodal' && comparisonRenderData ? (
+        selectedComparisonRoute ? (
+          selectedVehiclePolylines.map((polyline) => (
+            <Polyline
+              key={polyline.key}
+              positions={polyline.positions}
+              pathOptions={{
+                color: polyline.color,
+                weight: 6,
+                opacity: 0.95,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          ))
+        ) : (
+          comparisonRenderData.initialPolylines.map((polyline) => (
+            <Polyline
+              key={polyline.key}
+              positions={polyline.positions}
+              pathOptions={{
+                color: polyline.color,
+                weight: polyline.type === 'overlap' ? 7 : 6,
+                opacity: 0.92,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+              eventHandlers={polyline.clickable ? {
+                click: () => {
+                  if (onSelectComparisonRoute) {
+                    onSelectComparisonRoute(polyline.routeKey);
+                  }
+                },
+              } : undefined}
+            />
+          ))
+        )
+      ) : (
+        singleModeRoutePositions.length >= 2 && (
           <Polyline
-            key={seg.key}
-            positions={offsetPolylinePositions(
-              getProgressivePositions(seg.positions, drawProgress),
-              seg.offset || 0
-            )}
+            positions={singleModeRoutePositions}
             pathOptions={{
-              color: seg.color,
-              weight: 6,
-              opacity: 0.95,
+              color: singleModeLineColor,
+              weight: 5,
+              opacity: 0.9,
               lineCap: 'round',
               lineJoin: 'round',
-              dashArray: seg.color === '#3b82f6' ? null : null,
             }}
           />
-        ))
-      ) : routeCoords.length >= 2 ? (
-        <Polyline
-          positions={getProgressivePositions(routeCoords, drawProgress)}
-          pathOptions={{
-            color: singleModeLineColor,
-            weight: 5,
-            opacity: 0.85,
-            lineCap: 'round',
-            lineJoin: 'round',
-          }}
-        />
-      ) : null}
+        )
+      )}
 
       {anomalyPolylines.map((line) => (
         <Polyline
@@ -602,9 +611,9 @@ function MapView({
             <div style={{ minWidth: 200 }}>
               <div style={{ fontWeight: 700, marginBottom: 4 }}>Affected Edge</div>
               <div style={{ fontSize: 12, marginBottom: 6 }}>{line.edgeId}</div>
-              {line.anomalies.slice(0, 3).map((a) => (
-                <div key={a.anomaly_id} style={{ fontSize: 12, marginBottom: 4 }}>
-                  {a.type}: x{Number(a.severity || a.weight_multiplier || 1).toFixed(1)}
+              {line.anomalies.slice(0, 3).map((anomaly) => (
+                <div key={anomaly.anomaly_id} style={{ fontSize: 12, marginBottom: 4 }}>
+                  {anomaly.type}: x{Number(anomaly.severity || anomaly.weight_multiplier || 1).toFixed(1)}
                 </div>
               ))}
             </div>
@@ -637,7 +646,6 @@ function MapView({
         />
       )}
 
-      {/* ─── Graph node dots (filtered by selected mode) ───── */}
       {filteredNodes.map((node, idx) => (
         <CircleMarker
           key={`graph-node-${node.id}-${idx}`}
@@ -663,9 +671,9 @@ function MapView({
               </div>
               <div style={{ fontSize: 10, marginTop: 2 }}>
                 {node.accessible_modes?.length > 0 ? (
-                  node.accessible_modes.map((m) => (
-                    <div key={m} style={{ color: MODE_NODE_COLORS[m] }}>
-                      • {m}
+                  node.accessible_modes.map((mode) => (
+                    <div key={mode} style={{ color: MODE_NODE_COLORS[mode] }}>
+                      • {mode}
                     </div>
                   ))
                 ) : (

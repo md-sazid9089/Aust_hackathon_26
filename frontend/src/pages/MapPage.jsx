@@ -4,16 +4,130 @@
  * Full-screen map with floating HUD panels matching the design spec.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import MapView from '../components/MapView';
 import RoutePanel from '../components/RoutePanel';
 import ModeSelector from '../components/ModeSelector';
 import AnomalyAlert from '../components/AnomalyAlert';
 import AnomalyModal from '../components/AnomalyModal';
+import RouteSelectionPanel from '../components/RouteSelectionPanel';
 import { computeRoute, getRouteTraffic } from '../services/routeService';
 import { getGraphSnapshot, reportAnomaly, getAnomalies, clearAnomalies } from '../services/api';
 
-function MapPage({ apiStatus }) {
+const VEHICLE_COLOR_LEGEND = [
+  { label: 'Walking', color: '#8b5cf6' },
+  { label: 'Rickshaw', color: '#22c55e' },
+  { label: 'Bus', color: '#f59e0b' },
+  { label: 'Car', color: '#ef4444' },
+  { label: 'Bike', color: '#06b6d4' },
+];
+
+const isValidCoordinate = (lat, lng) => (
+  Number.isFinite(lat)
+  && Number.isFinite(lng)
+  && Math.abs(lat) <= 90
+  && Math.abs(lng) <= 180
+);
+
+const normalizeGeometry = (geometry) => {
+  if (!Array.isArray(geometry)) return [];
+
+  const normalized = geometry
+    .map((point) => {
+      if (Array.isArray(point) && point.length >= 2) {
+        const lat = Number(point[0]);
+        const lng = Number(point[1]);
+        return isValidCoordinate(lat, lng) ? { lat, lng } : null;
+      }
+
+      const lat = Number(point?.lat);
+      const lng = Number(point?.lng);
+      return isValidCoordinate(lat, lng) ? { lat, lng } : null;
+    })
+    .filter(Boolean);
+
+  const deduped = [];
+  normalized.forEach((point) => {
+    const prev = deduped[deduped.length - 1];
+    if (!prev || prev.lat !== point.lat || prev.lng !== point.lng) {
+      deduped.push(point);
+    }
+  });
+
+  return deduped;
+};
+
+const normalizeComparisonRoute = (candidate) => {
+  if (!candidate || typeof candidate !== 'object') return null;
+
+  const rawSegments = Array.isArray(candidate.segments)
+    ? candidate.segments
+    : Array.isArray(candidate.legs)
+      ? candidate.legs
+      : [];
+
+  const segments = rawSegments
+    .map((segment) => {
+      const geometry = normalizeGeometry(segment?.geometry || segment?.coordinates || []);
+      if (geometry.length < 2) return null;
+
+      return {
+        mode: segment?.mode || segment?.recommended_vehicle || 'walk',
+        geometry,
+        distance_m: Number(segment?.distance_m ?? 0),
+        duration_s: Number(segment?.duration_s ?? segment?.travel_time_s ?? 0),
+      };
+    })
+    .filter(Boolean);
+
+  if (segments.length === 0) {
+    return null;
+  }
+
+  const fallbackDistance = segments.reduce((sum, segment) => sum + segment.distance_m, 0);
+  const fallbackDuration = segments.reduce((sum, segment) => sum + segment.duration_s, 0);
+
+  return {
+    total_distance_m: Number(candidate.total_distance_m ?? candidate.total_distance ?? fallbackDistance),
+    total_duration_s: Number(candidate.total_duration_s ?? candidate.total_time ?? fallbackDuration),
+    segments,
+  };
+};
+
+const extractComparisonRoutes = (routeResult) => {
+  if (!routeResult) {
+    return null;
+  }
+
+  const minTimeRoutes = Array.isArray(routeResult.min_time_routes) ? routeResult.min_time_routes : [];
+  const minDistanceRoutes = Array.isArray(routeResult.min_distance_routes)
+    ? routeResult.min_distance_routes
+    : [];
+  const suggestions = Array.isArray(routeResult.multimodal_suggestions)
+    ? routeResult.multimodal_suggestions
+    : [];
+
+  const fastestSuggestions = suggestions.filter((item) => item?.strategy === 'fastest_time');
+  const shortestSuggestions = suggestions.filter((item) => item?.strategy === 'shortest_distance');
+
+  const fastest = normalizeComparisonRoute(
+    minTimeRoutes[0] || fastestSuggestions[0] || suggestions[0] || null
+  );
+  const shortest = normalizeComparisonRoute(
+    minDistanceRoutes[0] || shortestSuggestions[0] || suggestions[1] || suggestions[0] || null
+  );
+
+  if (!fastest && !shortest) {
+    return null;
+  }
+
+  return {
+    fastest: fastest || shortest,
+    shortest: shortest || fastest,
+  };
+};
+
+function MapPage({ apiStatus, onGoBack }) {
   const [origin, setOrigin] = useState(null);
   const [destination, setDestination] = useState(null);
   const [routeMode, setRouteMode] = useState('single');
@@ -33,48 +147,22 @@ function MapPage({ apiStatus }) {
   const [isAnomalyPickMode, setIsAnomalyPickMode] = useState(false);
   const [isAnomalyPanelCollapsed, setIsAnomalyPanelCollapsed] = useState(true);
   const [lastRouteOptions, setLastRouteOptions] = useState({ includeMultimodal: false });
+  const [selectedComparisonRoute, setSelectedComparisonRoute] = useState(null);
 
   const isBackendOnline =
     apiStatus?.status === 'healthy' ||
     apiStatus?.status === 'ok' ||
     apiStatus?.status === 'degraded';
 
-  const dualRoute = (() => {
-    const suggestions = Array.isArray(routeResult?.multimodal_suggestions)
-      ? routeResult.multimodal_suggestions
-      : [];
+  const comparisonRoutes = useMemo(() => extractComparisonRoutes(routeResult), [routeResult]);
 
-    const normalizeRoute = (suggestion) => {
-      if (!suggestion) return null;
-      return {
-        total_distance: Number(suggestion.total_distance_m ?? suggestion.total_distance ?? 0),
-        total_time: Number(suggestion.total_duration_s ?? suggestion.total_time ?? 0),
-        segments: Array.isArray(suggestion.segments)
-          ? suggestion.segments.map((segment) => ({
-              mode: segment.mode || segment.recommended_vehicle || 'walk',
-              recommended_vehicle: segment.recommended_vehicle || segment.mode || 'walk',
-              geometry: Array.isArray(segment.geometry)
-                ? segment.geometry
-                : Array.isArray(segment.coordinates)
-                  ? segment.coordinates.map(([lat, lng]) => ({ lat, lng }))
-                  : [],
-              distance_m: Number(segment.distance_m ?? 0),
-              travel_time_s: Number(segment.travel_time_s ?? segment.duration_s ?? 0),
-            }))
-          : [],
-      };
-    };
-
-    const fastest = suggestions.find((item) => item.strategy === 'fastest_time') || suggestions[0] || null;
-    const shortest = suggestions.find((item) => item.strategy === 'shortest_distance') || suggestions[1] || suggestions[0] || null;
-
-    if (!fastest && !shortest) return null;
-
-    return {
-      min_time_route: normalizeRoute(fastest),
-      min_distance_route: normalizeRoute(shortest),
-    };
-  })();
+  useEffect(() => {
+    if (routeMode !== 'multimodal') {
+      setSelectedComparisonRoute(null);
+      return;
+    }
+    setSelectedComparisonRoute(null);
+  }, [routeResult?.route_id, routeMode]);
 
   useEffect(() => {
     const routeId = routeResult?.route_id;
@@ -291,6 +379,7 @@ function MapPage({ apiStatus }) {
       setOrigin(latlng);
       setDestination(null);
       setRouteResult(null);
+      setSelectedComparisonRoute(null);
       setError(null);
     }
   };
@@ -321,6 +410,7 @@ function MapPage({ apiStatus }) {
         include_multimodal: includeMultimodal,
       });
       setRouteResult(result);
+      setSelectedComparisonRoute(null);
     } catch (err) {
       setError(err.message || 'Failed to compute route');
     } finally {
@@ -406,18 +496,21 @@ function MapPage({ apiStatus }) {
     setOrigin(null);
     setDestination(null);
     setRouteResult(null);
+    setSelectedComparisonRoute(null);
     setError(null);
   };
 
   const handleOriginDrag = (latlng) => {
     setOrigin(latlng);
     setRouteResult(null);
+    setSelectedComparisonRoute(null);
     setError(null);
   };
 
   const handleDestinationDrag = (latlng) => {
     setDestination(latlng);
     setRouteResult(null);
+    setSelectedComparisonRoute(null);
     setError(null);
   };
 
@@ -425,8 +518,12 @@ function MapPage({ apiStatus }) {
     setRouteMode(nextMode);
     setLastRouteOptions({ includeMultimodal: nextMode === 'multimodal' });
     setRouteResult(null);
+    setSelectedComparisonRoute(null);
     setError(null);
   };
+
+  const showMinimalComparisonPanel =
+    routeMode === 'multimodal' && comparisonRoutes?.fastest && comparisonRoutes?.shortest;
 
   return (
     <div style={{
@@ -442,7 +539,9 @@ function MapPage({ apiStatus }) {
           origin={origin}
           destination={destination}
           routeResult={routeResult}
-          dualRoute={dualRoute}
+          comparisonRoutes={comparisonRoutes}
+          selectedComparisonRoute={selectedComparisonRoute}
+          onSelectComparisonRoute={setSelectedComparisonRoute}
           routeMode={routeMode}
           selectedMode={modes?.[0] || 'car'}
           graphNodes={graphNodes}
@@ -483,62 +582,166 @@ function MapPage({ apiStatus }) {
         pointerEvents: 'auto',
         scrollbarWidth: 'none',
       }}>
-        {/* Transport Mode Card */}
-        <div style={{
-          background: 'rgba(18,18,22,0.92)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          borderRadius: 22,
-          padding: 16,
-          border: '1px solid rgba(255,255,255,0.06)',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03)',
-        }}>
-          <ModeSelector
-            selectedModes={modes}
-            onChange={setModes}
-            routeMode={routeMode}
-            onRouteModeChange={handleRouteModeChange}
-          />
-        </div>
-
-        {/* Route Planner Card */}
-        <div style={{
-          background: 'rgba(18,18,22,0.92)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          borderRadius: 22,
-          padding: 16,
-          border: '1px solid rgba(255,255,255,0.06)',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03)',
-        }}>
-          <RoutePanel
-            origin={origin}
-            destination={destination}
-            routeResult={routeResult}
-            dualRoute={dualRoute}
-            routeMode={routeMode}
-            isLoading={isLoading}
-            error={error}
-            onCompute={() => handleComputeRoute(routeMode === 'multimodal')}
-            onComputeMultimodal={() => handleComputeRoute(true)}
-            onRouteModeChange={handleRouteModeChange}
-            onClear={handleClear}
-          />
-        </div>
-
-        {/* Anomaly Alert Card */}
-        {anomalies.length > 0 && (
-          <div style={{
+        <button
+          type="button"
+          onClick={() => onGoBack && onGoBack()}
+          style={{
+            alignSelf: 'flex-start',
+            padding: '9px 14px',
+            borderRadius: 999,
+            border: '1px solid rgba(255,255,255,0.14)',
             background: 'rgba(18,18,22,0.92)',
-            backdropFilter: 'blur(24px)',
-            WebkitBackdropFilter: 'blur(24px)',
-            borderRadius: 22,
-            padding: 16,
-            border: '1px solid rgba(249,115,22,0.18)',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
-          }}>
-            <AnomalyAlert anomalies={anomalies} />
-          </div>
+            color: '#e5e7eb',
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: 'pointer',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.45)',
+          }}
+        >
+          ← Go Back
+        </button>
+
+        {showMinimalComparisonPanel ? (
+          <>
+            <div style={{
+              background: 'rgba(18,18,22,0.92)',
+              backdropFilter: 'blur(24px)',
+              WebkitBackdropFilter: 'blur(24px)',
+              borderRadius: 22,
+              padding: 16,
+              border: '1px solid rgba(255,255,255,0.06)',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03)',
+            }}>
+              <RouteSelectionPanel
+                fastestRoute={comparisonRoutes.fastest}
+                shortestRoute={comparisonRoutes.shortest}
+                selectedRoute={selectedComparisonRoute}
+                onSelectRoute={setSelectedComparisonRoute}
+              />
+            </div>
+
+            <div style={{
+              background: 'rgba(18,18,22,0.92)',
+              backdropFilter: 'blur(24px)',
+              WebkitBackdropFilter: 'blur(24px)',
+              borderRadius: 22,
+              padding: 16,
+              border: '1px solid rgba(255,255,255,0.06)',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}>
+              <div style={{
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: '0.02em',
+                color: '#e5e7eb',
+              }}>
+                Vehicle Color Legend
+              </div>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 8,
+              }}>
+                {VEHICLE_COLOR_LEGEND.map((item) => (
+                  <div
+                    key={item.label}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      color: '#cbd5e1',
+                      fontSize: 11,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      background: item.color,
+                      boxShadow: `0 0 0 2px ${item.color}33`,
+                      flexShrink: 0,
+                    }} />
+                    <span>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{
+                fontSize: 10,
+                color: '#94a3b8',
+                lineHeight: 1.4,
+              }}>
+                {selectedComparisonRoute
+                  ? 'Vehicle colors are active on the selected route.'
+                  : 'Select Fastest or Shortest to apply vehicle colors on map segments.'}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Transport Mode Card */}
+            <div style={{
+              background: 'rgba(18,18,22,0.92)',
+              backdropFilter: 'blur(24px)',
+              WebkitBackdropFilter: 'blur(24px)',
+              borderRadius: 22,
+              padding: 16,
+              border: '1px solid rgba(255,255,255,0.06)',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03)',
+            }}>
+              <ModeSelector
+                selectedModes={modes}
+                onChange={setModes}
+                routeMode={routeMode}
+                onRouteModeChange={handleRouteModeChange}
+              />
+            </div>
+
+            {/* Route Planner Card */}
+            <div style={{
+              background: 'rgba(18,18,22,0.92)',
+              backdropFilter: 'blur(24px)',
+              WebkitBackdropFilter: 'blur(24px)',
+              borderRadius: 22,
+              padding: 16,
+              border: '1px solid rgba(255,255,255,0.06)',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03)',
+            }}>
+              <RoutePanel
+                origin={origin}
+                destination={destination}
+                routeResult={routeResult}
+                dualRoute={null}
+                routeMode={routeMode}
+                isLoading={isLoading}
+                error={error}
+                onCompute={() => handleComputeRoute(routeMode === 'multimodal')}
+                onComputeMultimodal={() => handleComputeRoute(true)}
+                onRouteModeChange={handleRouteModeChange}
+                onClear={handleClear}
+              />
+            </div>
+
+            {/* Anomaly Alert Card */}
+            {anomalies.length > 0 && (
+              <div style={{
+                background: 'rgba(18,18,22,0.92)',
+                backdropFilter: 'blur(24px)',
+                WebkitBackdropFilter: 'blur(24px)',
+                borderRadius: 22,
+                padding: 16,
+                border: '1px solid rgba(249,115,22,0.18)',
+                boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
+              }}>
+                <AnomalyAlert anomalies={anomalies} />
+              </div>
+            )}
+          </>
         )}
       </div>
 

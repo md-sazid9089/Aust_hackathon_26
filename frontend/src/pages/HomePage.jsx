@@ -246,18 +246,7 @@ function HomePage({ onNavigateToMap, apiStatus }) {
               className="btn-accent"
               style={{ padding: '13px 32px', fontSize: 15 }}
             >
-              Launch Route Engine →
-            </button>
-            <button
-              style={{
-                padding: '13px 28px', fontSize: 14,
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid var(--border-mid)',
-                borderRadius: 999, color: 'var(--text-secondary)',
-                cursor: 'default', fontWeight: 500,
-              }}
-            >
-              ◈ View Docs
+              Launch Engine →
             </button>
           </div>
         </div>
@@ -380,7 +369,7 @@ function HomePage({ onNavigateToMap, apiStatus }) {
                   cursor: 'pointer',
                   transition: 'all 0.3s ease',
                 }}>
-                  Get Started
+                  Choose Starter
                 </button>
 
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, gap: 12, display: 'flex', flexDirection: 'column', fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -440,7 +429,7 @@ function HomePage({ onNavigateToMap, apiStatus }) {
                   transition: 'all 0.3s ease',
                   boxShadow: '0 4px 16px rgba(20, 184, 166, 0.3)',
                 }}>
-                  Get Started
+                  Choose Pro
                 </button>
 
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, gap: 12, display: 'flex', flexDirection: 'column', fontSize: 12, color: 'var(--text-secondary)' }}>

@@ -9,7 +9,6 @@
  *   - Dual-route comparison cards for multimodal mode
  */
 
-import RouteComparisonCards from './RouteComparisonCards';
 
 const MODE_COLORS = {
   car:      '#3b82f6',
@@ -202,15 +201,6 @@ function RoutePanel({
         </div>
       )}
 
-      {/* Dual Route Comparison Cards (Multimodal Mode) */}
-      {routeMode === 'multimodal' && dualRoute && (dualRoute.min_time_route || dualRoute.min_distance_route) && (
-        <RouteComparisonCards
-          dualRoute={dualRoute}
-          routeMode={routeMode}
-          onRouteModeChange={onRouteModeChange}
-        />
-      )}
-
       {/* Route result */}
       {routeResult && (
         <div className="animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -338,7 +328,7 @@ function RoutePanel({
           )}
 
           {/* Real multimodal recommendation output */}
-          {isMultimodalMode && Array.isArray(routeResult.multimodal_suggestions) && routeResult.multimodal_suggestions.length > 0 && (
+          {false && isMultimodalMode && Array.isArray(routeResult.multimodal_suggestions) && routeResult.multimodal_suggestions.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <SectionLabel text="Multimodal Suggestions" icon={'\u2728'} />
               {routeResult.multimodal_suggestions.map((s, idx) => (
