@@ -10,7 +10,7 @@
  */
 
 import { createPortal } from 'react-dom';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMapEvents, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
@@ -21,6 +21,11 @@ const SEGMENT_MODE_COLORS = {
   bike: '#facc15',     // yellow
   rickshaw: '#22c55e', // green
   walk: '#a855f7',     // purple
+};
+
+const DUAL_ROUTE_COLORS = {
+  fastest: '#6d28d9',  // deep purple
+  shortest: '#db2777', // deep pink
 };
 
 const SINGLE_MODE_COLORS = {
@@ -72,6 +77,67 @@ function MapClickHandler({ onMapClick }) {
     },
   });
   return null;
+}
+
+function getProgressivePositions(positions, progress) {
+  if (!Array.isArray(positions) || positions.length < 2) {
+    return positions || [];
+  }
+
+  const p = Math.max(0, Math.min(1, Number(progress) || 0));
+  if (p >= 1) {
+    return positions;
+  }
+
+  const totalSegments = positions.length - 1;
+  const scaled = p * totalSegments;
+  const fullSegments = Math.floor(scaled);
+  const frac = scaled - fullSegments;
+
+  const revealed = positions.slice(0, fullSegments + 1);
+  const from = positions[fullSegments];
+  const to = positions[Math.min(fullSegments + 1, totalSegments)];
+  const interp = [
+    from[0] + (to[0] - from[0]) * frac,
+    from[1] + (to[1] - from[1]) * frac,
+  ];
+
+  if (revealed.length === 1) {
+    return [revealed[0], interp];
+  }
+
+  return [...revealed, interp];
+}
+
+function offsetPolylinePositions(positions, offsetMeters = 0) {
+  if (!Array.isArray(positions) || positions.length < 2 || !offsetMeters) {
+    return positions || [];
+  }
+
+  const metersToLat = offsetMeters / 111320;
+  const offsetPositions = [];
+
+  for (let i = 0; i < positions.length; i++) {
+    const current = positions[i];
+    const prev = positions[Math.max(0, i - 1)];
+    const next = positions[Math.min(positions.length - 1, i + 1)];
+
+    const dx = next[1] - prev[1];
+    const dy = next[0] - prev[0];
+    const length = Math.sqrt(dx * dx + dy * dy) || 1;
+    const perpX = -dy / length;
+    const perpY = dx / length;
+
+    const latOffset = metersToLat * perpY;
+    const lngOffset = metersToLat * perpX / Math.max(Math.cos((current[0] * Math.PI) / 180), 0.25);
+
+    offsetPositions.push([
+      current[0] + latOffset,
+      current[1] + lngOffset,
+    ]);
+  }
+
+  return offsetPositions;
 }
 
 function MapFABControls({ defaultCenter, defaultZoom }) {
@@ -160,6 +226,7 @@ function MapView({
   origin,
   destination,
   routeResult,
+  dualRoute,
   routeMode,
   selectedMode,
   graphNodes,
@@ -177,12 +244,52 @@ function MapView({
   const defaultCenter = [23.7639, 90.4066];
   const defaultZoom = 14;
 
+  const selectedComparisonRoute = useMemo(() => {
+    if (routeMode === 'min_time') return dualRoute?.min_time_route || null;
+    if (routeMode === 'min_distance') return dualRoute?.min_distance_route || null;
+    return null;
+  }, [routeMode, dualRoute]);
+
   const routeCoords =
-    routeResult?.legs?.flatMap((leg) => leg.geometry?.map((point) => [point.lat, point.lng]) || []) || [];
+    selectedComparisonRoute?.segments?.flatMap((segment) =>
+      segment.geometry?.map((point) => [point.lat, point.lng]) || []
+    ) || routeResult?.legs?.flatMap((leg) => leg.geometry?.map((point) => [point.lat, point.lng]) || []) || [];
 
   const singleModeLineColor = SINGLE_MODE_COLORS[selectedMode] || '#22c55e';
+  const [drawProgress, setDrawProgress] = useState(1);
 
   const coloredSegments = useMemo(() => {
+    if (routeMode === 'multimodal' && dualRoute) {
+      const routes = [
+        {
+          key: 'min_time_route',
+          route: dualRoute.min_time_route,
+          color: DUAL_ROUTE_COLORS.fastest,
+          offset: -2.5,
+        },
+        {
+          key: 'min_distance_route',
+          route: dualRoute.min_distance_route,
+          color: DUAL_ROUTE_COLORS.shortest,
+          offset: 2.5,
+        },
+      ];
+
+      return routes
+        .filter(({ route }) => route && Array.isArray(route.segments))
+        .flatMap(({ key, route, color }) =>
+          route.segments
+            .filter((segment) => Array.isArray(segment.geometry) && segment.geometry.length >= 2)
+            .map((segment, idx) => ({
+              key: `${key}-${idx}`,
+              mode: segment.recommended_vehicle || segment.mode,
+              color,
+              positions: segment.geometry.map((point) => [point.lat, point.lng]),
+              offset: key === 'min_time_route' ? -2.5 : 2.5,
+            }))
+        );
+    }
+
     if (routeMode !== 'multimodal') {
       return [];
     }
@@ -220,7 +327,58 @@ function MapView({
         color: SEGMENT_MODE_COLORS[seg.recommended_vehicle] || '#22c55e',
         positions: seg.geometry.map((p) => [p.lat, p.lng]),
       }));
-  }, [routeResult, routeMode]);
+  }, [routeResult, routeMode, dualRoute]);
+
+  const routeAnimationKey = useMemo(() => {
+    const legKey = (routeMode === 'multimodal' && dualRoute)
+      ? [
+          dualRoute.min_time_route,
+          dualRoute.min_distance_route,
+        ]
+          .filter(Boolean)
+          .map((route) => `${route.total_distance}:${route.total_time}:${(route.segments || []).length}`)
+          .join('|')
+      : selectedComparisonRoute
+        ? `${selectedComparisonRoute.total_distance}:${selectedComparisonRoute.total_time}:${(selectedComparisonRoute.segments || []).length}`
+      : (routeResult?.legs || [])
+      .map((leg) => `${leg.mode}:${(leg.geometry || []).length}`)
+      .join('|');
+    return `${routeMode || 'single'}::${legKey}::${routeCoords.length}`;
+  }, [routeMode, routeResult, dualRoute, selectedComparisonRoute, routeCoords.length]);
+
+  useEffect(() => {
+    const hasRouteToAnimate =
+      (coloredSegments.length > 0 && coloredSegments.some((s) => (s.positions || []).length >= 2))
+      || routeCoords.length >= 2;
+
+    if (!hasRouteToAnimate) {
+      setDrawProgress(1);
+      return;
+    }
+
+    setDrawProgress(0);
+    const pointCount = Math.max(
+      routeCoords.length,
+      ...coloredSegments.map((s) => (s.positions || []).length),
+      2
+    );
+    const durationMs = Math.min(2200, Math.max(700, pointCount * 14));
+    const startedAt = performance.now();
+    let rafId = 0;
+
+    const animate = (now) => {
+      const elapsed = now - startedAt;
+      const linear = Math.max(0, Math.min(1, elapsed / durationMs));
+      const eased = 1 - Math.pow(1 - linear, 3);
+      setDrawProgress(eased);
+      if (linear < 1) {
+        rafId = requestAnimationFrame(animate);
+      }
+    };
+
+    rafId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafId);
+  }, [routeAnimationKey, coloredSegments, routeCoords.length]);
 
   const originDragHandlers = useMemo(
     () => ({
@@ -400,19 +558,23 @@ function MapView({
         coloredSegments.map((seg) => (
           <Polyline
             key={seg.key}
-            positions={seg.positions}
+            positions={offsetPolylinePositions(
+              getProgressivePositions(seg.positions, drawProgress),
+              seg.offset || 0
+            )}
             pathOptions={{
               color: seg.color,
               weight: 6,
               opacity: 0.95,
               lineCap: 'round',
               lineJoin: 'round',
+              dashArray: seg.color === '#3b82f6' ? null : null,
             }}
           />
         ))
       ) : routeCoords.length >= 2 ? (
         <Polyline
-          positions={routeCoords}
+          positions={getProgressivePositions(routeCoords, drawProgress)}
           pathOptions={{
             color: singleModeLineColor,
             weight: 5,
