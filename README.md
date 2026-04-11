@@ -17,6 +17,7 @@ Multi-modal hyper-local routing engine that computes road-accurate routes around
 2. Add an anomaly and verify route adaptation.
 3. Confirm async traffic lifecycle (`loading -> ready`) from `route_id` polling.
 4. Compare multimodal fastest vs shortest route options in UI.
+5. ML Model Predicting Traffic Possibility synced according to local time
 
 ### 5-Minute Judge Validation Path
 
