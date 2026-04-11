@@ -19,13 +19,46 @@ from typing import Any
 
 
 # ─── Path to the global config file ──────────────────────────────
-CONFIG_PATH = os.environ.get("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
+# Try multiple locations:
+#   1. CONFIG_PATH environment variable (explicit override)
+#   2. ./config.json (backend directory - for Render deployment)
+#   3. ../config.json (project root - for local dev)
+def _find_config_path():
+    # Check environment variable first
+    if "CONFIG_PATH" in os.environ:
+        return os.environ["CONFIG_PATH"]
+    
+    # Check backend directory (Render deployment)
+    backend_config = os.path.join(os.path.dirname(__file__), "config.json")
+    if os.path.exists(backend_config):
+        return backend_config
+    
+    # Check parent directory (local development)
+    root_config = os.path.join(os.path.dirname(__file__), "..", "config.json")
+    if os.path.exists(root_config):
+        return root_config
+    
+    # Default fallback
+    return root_config
+
+CONFIG_PATH = _find_config_path()
 
 
 def _load_config() -> dict:
     """Load and parse the JSON config file."""
-    with open(CONFIG_PATH, "r") as f:
-        return json.load(f)
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"\n[ERROR] Config file not found at: {CONFIG_PATH}")
+        print(f"[ERROR] Tried locations:")
+        print(f"         - {os.path.join(os.path.dirname(__file__), 'config.json')}")
+        print(f"         - {os.path.join(os.path.dirname(__file__), '..', 'config.json')}")
+        print(f"[ERROR] Please ensure config.json is in the project root or backend directory")
+        raise
+    except json.JSONDecodeError as e:
+        print(f"\n[ERROR] Invalid JSON in {CONFIG_PATH}: {e}")
+        raise
 
 
 _raw: dict = _load_config()
