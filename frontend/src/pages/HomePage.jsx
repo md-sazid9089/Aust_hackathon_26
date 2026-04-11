@@ -12,28 +12,31 @@
  *   - Calls onNavigateToMap() to switch to the routing interface
  */
 
+import ControlCard from '../components/ControlCard';
+import { Navigation, AlertTriangle, TrendingUp, Database } from 'lucide-react';
+
 function HomePage({ onNavigateToMap, apiStatus }) {
   const features = [
     {
-      icon: '⬡',
+      IconComponent: Navigation,
       title: 'Multi-Modal Routing',
       description: 'Combine car, bike, walk, and transit for optimal multi-leg journeys with configurable switch penalties.',
       accent: '#38bdf8',
     },
     {
-      icon: '⚡',
+      IconComponent: AlertTriangle,
       title: 'Real-Time Anomalies',
       description: 'Ingest accidents, closures, and weather events. Routes dynamically adjust with severity-based weight multipliers.',
       accent: '#f97316',
     },
     {
-      icon: '◈',
+      IconComponent: TrendingUp,
       title: 'ML Congestion Prediction',
       description: 'Machine learning predicts edge traversal times using historical patterns, time-of-day, and road characteristics.',
       accent: '#14b8a6',
     },
     {
-      icon: '▦',
+      IconComponent: Database,
       title: 'Graph Snapshots',
       description: 'Export the current road graph state for debugging, visualization, and integration testing.',
       accent: '#a78bfa',
@@ -139,6 +142,58 @@ function HomePage({ onNavigateToMap, apiStatus }) {
             <circle cx="300" cy="180" r="8" />
           </g>
         </svg>
+
+        {/* Loader animations - multiple loaders */}
+        {/* Center loader */}
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 0,
+          opacity: 0.4,
+        }}>
+          <div className="loader-shape-3" />
+        </div>
+
+        {/* Top-left loader */}
+        <div style={{
+          position: 'absolute',
+          top: '35%',
+          left: '35%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 0,
+          opacity: 0.15,
+          animationDelay: '0.2s',
+        }}>
+          <div className="loader-shape-3" style={{ animationDelay: '0.2s' }} />
+        </div>
+
+        {/* Top-right loader */}
+        <div style={{
+          position: 'absolute',
+          top: '35%',
+          right: '15%',
+          transform: 'translate(50%, -50%)',
+          zIndex: 0,
+          opacity: 0.15,
+          animationDelay: '0.4s',
+        }}>
+          <div className="loader-shape-3" style={{ animationDelay: '0.4s' }} />
+        </div>
+
+        {/* Bottom loader */}
+        <div style={{
+          position: 'absolute',
+          bottom: '20%',
+          left: '50%',
+          transform: 'translate(-50%, 50%)',
+          zIndex: 0,
+          opacity: 0.2,
+          animationDelay: '0.6s',
+        }}>
+          <div className="loader-shape-3" style={{ animationDelay: '0.6s' }} />
+        </div>
 
         <div style={{ position: 'relative', maxWidth: 780, width: '100%', textAlign: 'center', zIndex: 1 }}>
           {/* Tag pill */}
@@ -253,33 +308,13 @@ function HomePage({ onNavigateToMap, apiStatus }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
             {features.map((feature, idx) => (
-              <div
+              <ControlCard
                 key={idx}
-                className="sys-card animate-slide-up"
-                style={{ padding: 28, animationDelay: `${idx * 80}ms` }}
-              >
-                {/* Icon */}
-                <div style={{
-                  width: 44, height: 44, borderRadius: 12,
-                  background: `${feature.accent}18`,
-                  border: `1px solid ${feature.accent}30`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 20, color: feature.accent, marginBottom: 18,
-                  fontWeight: 700,
-                }}>
-                  {feature.icon}
-                </div>
-
-                <h4 style={{ fontSize: 16, fontWeight: 600, color: '#fff', margin: '0 0 8px', letterSpacing: '-0.01em' }}>
-                  {feature.title}
-                </h4>
-                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65, margin: '0 0 20px' }}>
-                  {feature.description}
-                </p>
-
-                {/* Arrow indicator */}
-                <div style={{ fontSize: 18, color: feature.accent, fontWeight: 700 }}>→</div>
-              </div>
+                IconComponent={feature.IconComponent}
+                title={feature.title}
+                description={feature.description}
+                accent={feature.accent}
+              />
             ))}
           </div>
         </div>
