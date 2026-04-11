@@ -116,19 +116,17 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
-# ─── Verify and copy config.json ──────────────────────────────
+# ─── Verify config.json ──────────────────────────────────────
 echo ""
 echo "[INFO] Checking configuration..."
 
-if [[ ! -f "../config.json" ]]; then
-    echo "[ERROR] config.json not found at ../config.json"
-    echo "[ERROR] Backend requires config.json in project root"
+if [[ ! -f "config.json" ]]; then
+    echo "[ERROR] config.json not found in backend directory"
+    echo "[ERROR] Backend requires config.json"
     exit 1
 fi
 
-# Copy config.json to backend directory for Render deployment
-cp ../config.json ./config.json
-echo "[✓] config.json found and copied to backend directory"
+echo "[✓] config.json found in backend directory"
 
 # ─── Summary ───────────────────────────────────────────────────
 echo ""
