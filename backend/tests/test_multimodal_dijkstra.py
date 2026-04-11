@@ -11,7 +11,10 @@ Validates the core algorithm against the spec's design rules:
 import networkx as nx
 import pytest
 
-from services.multimodal_dijkstra import multi_modal_dijkstra, multi_modal_dijkstra_with_coords
+from services.multimodal_dijkstra import (
+    multi_modal_dijkstra,
+    multi_modal_dijkstra_with_coords,
+)
 
 
 def _build_test_graph():
@@ -32,36 +35,88 @@ def _build_test_graph():
     G.add_node("D", x=90.41, y=23.81)
 
     # A -> B: car + walk allowed
-    G.add_edge("A", "B", key=0, **{
-        "weights": {"car": 10, "walk": 25, "rickshaw": 15},
-        "constraints": {"car_allowed": True, "walk_allowed": True, "rickshaw_allowed": True},
-        "travel_time": 10, "car_travel_time": 10, "walk_travel_time": 25, "rickshaw_travel_time": 15,
-        "length": 500, "base_weight": 500,
-    })
+    G.add_edge(
+        "A",
+        "B",
+        key=0,
+        **{
+            "weights": {"car": 10, "walk": 25, "rickshaw": 15},
+            "constraints": {
+                "car_allowed": True,
+                "walk_allowed": True,
+                "rickshaw_allowed": True,
+            },
+            "travel_time": 10,
+            "car_travel_time": 10,
+            "walk_travel_time": 25,
+            "rickshaw_travel_time": 15,
+            "length": 500,
+            "base_weight": 500,
+        },
+    )
 
     # B -> D: car + walk allowed
-    G.add_edge("B", "D", key=0, **{
-        "weights": {"car": 10, "walk": 25, "rickshaw": 15},
-        "constraints": {"car_allowed": True, "walk_allowed": True, "rickshaw_allowed": True},
-        "travel_time": 10, "car_travel_time": 10, "walk_travel_time": 25, "rickshaw_travel_time": 15,
-        "length": 500, "base_weight": 500,
-    })
+    G.add_edge(
+        "B",
+        "D",
+        key=0,
+        **{
+            "weights": {"car": 10, "walk": 25, "rickshaw": 15},
+            "constraints": {
+                "car_allowed": True,
+                "walk_allowed": True,
+                "rickshaw_allowed": True,
+            },
+            "travel_time": 10,
+            "car_travel_time": 10,
+            "walk_travel_time": 25,
+            "rickshaw_travel_time": 15,
+            "length": 500,
+            "base_weight": 500,
+        },
+    )
 
     # A -> C: walk only (footway)
-    G.add_edge("A", "C", key=0, **{
-        "weights": {"car": 15, "walk": 15, "rickshaw": 15},
-        "constraints": {"car_allowed": False, "walk_allowed": True, "rickshaw_allowed": True},
-        "travel_time": 15, "car_travel_time": 15, "walk_travel_time": 15, "rickshaw_travel_time": 15,
-        "length": 300, "base_weight": 300,
-    })
+    G.add_edge(
+        "A",
+        "C",
+        key=0,
+        **{
+            "weights": {"car": 15, "walk": 15, "rickshaw": 15},
+            "constraints": {
+                "car_allowed": False,
+                "walk_allowed": True,
+                "rickshaw_allowed": True,
+            },
+            "travel_time": 15,
+            "car_travel_time": 15,
+            "walk_travel_time": 15,
+            "rickshaw_travel_time": 15,
+            "length": 300,
+            "base_weight": 300,
+        },
+    )
 
     # C -> D: walk only (footway)
-    G.add_edge("C", "D", key=0, **{
-        "weights": {"car": 15, "walk": 15, "rickshaw": 15},
-        "constraints": {"car_allowed": False, "walk_allowed": True, "rickshaw_allowed": True},
-        "travel_time": 15, "car_travel_time": 15, "walk_travel_time": 15, "rickshaw_travel_time": 15,
-        "length": 300, "base_weight": 300,
-    })
+    G.add_edge(
+        "C",
+        "D",
+        key=0,
+        **{
+            "weights": {"car": 15, "walk": 15, "rickshaw": 15},
+            "constraints": {
+                "car_allowed": False,
+                "walk_allowed": True,
+                "rickshaw_allowed": True,
+            },
+            "travel_time": 15,
+            "car_travel_time": 15,
+            "walk_travel_time": 15,
+            "rickshaw_travel_time": 15,
+            "length": 300,
+            "base_weight": 300,
+        },
+    )
 
     return G
 
@@ -198,7 +253,9 @@ class TestMultiModalDijkstra:
 
         # With high switch penalty, staying on one mode is preferred
         result_no_switch = multi_modal_dijkstra(G, "A", "D", ["car"], switch_penalty=0)
-        result_with_switch = multi_modal_dijkstra(G, "A", "D", ["car", "walk"], switch_penalty=100)
+        result_with_switch = multi_modal_dijkstra(
+            G, "A", "D", ["car", "walk"], switch_penalty=100
+        )
 
         assert result_no_switch is not None
         assert result_with_switch is not None
@@ -214,7 +271,9 @@ class TestMultiModalDijkstra:
 
         # Force a switch: walk A->C, then rickshaw C->D
         penalty = 50
-        result = multi_modal_dijkstra(G, "A", "D", ["walk", "rickshaw"], switch_penalty=penalty)
+        result = multi_modal_dijkstra(
+            G, "A", "D", ["walk", "rickshaw"], switch_penalty=penalty
+        )
         assert result is not None
 
         # Check that if mode changes mid-path, penalty is in the cost
@@ -246,7 +305,9 @@ class TestMultiModalDijkstra:
         """Multi-modal should find routes that mix modes optimally."""
         G = _build_test_graph()
         # With zero switch penalty, algorithm can freely mix modes
-        result = multi_modal_dijkstra(G, "A", "D", ["car", "walk", "rickshaw"], switch_penalty=0)
+        result = multi_modal_dijkstra(
+            G, "A", "D", ["car", "walk", "rickshaw"], switch_penalty=0
+        )
         assert result is not None
         # Should find the cheapest: A->B by car (10) + B->D by car (10) = 20
         assert result["cost"] == 20

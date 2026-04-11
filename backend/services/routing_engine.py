@@ -1114,7 +1114,12 @@ class RoutingEngine:
                 mode_allowed = bool(edge.get(f"{mode}_allowed", False))
                 if mode == "walk":
                     mode_allowed = bool(
-                        edge.get("walk_allowed", edge.get("walking_allowed", edge.get("pedestrian_allowed", False)))
+                        edge.get(
+                            "walk_allowed",
+                            edge.get(
+                                "walking_allowed", edge.get("pedestrian_allowed", False)
+                            ),
+                        )
                     )
                 if not mode_allowed:
                     continue
@@ -1605,11 +1610,16 @@ class RoutingEngine:
                 e
                 for e in data.values()
                 if bool(
-                    e.get("walk_allowed", e.get("walking_allowed", e.get("pedestrian_allowed", False)))
+                    e.get(
+                        "walk_allowed",
+                        e.get("walking_allowed", e.get("pedestrian_allowed", False)),
+                    )
                 )
             ]
         else:
-            allowed = [e for e in data.values() if bool(e.get(f"{mode}_allowed", False))]
+            allowed = [
+                e for e in data.values() if bool(e.get(f"{mode}_allowed", False))
+            ]
         if not allowed:
             return {}
 

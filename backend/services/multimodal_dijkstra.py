@@ -331,7 +331,9 @@ def multi_modal_dijkstra(
                             switch_started = time.perf_counter()
                             extra_penalty = switch_penalty
                             switches_applied += 1
-                            switch_handling_time_s += time.perf_counter() - switch_started
+                            switch_handling_time_s += (
+                                time.perf_counter() - switch_started
+                            )
 
                     new_cost = cost + best_mode_edge_cost + extra_penalty
 

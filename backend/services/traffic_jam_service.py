@@ -50,7 +50,9 @@ class TrafficJamService:
         self._road_type_code: dict[str, int] = {}
         self._jam_lookup: dict[tuple[str, int], int] = {}
         self._csv_path: Path | None = None
-        self._edge_prediction_cache: dict[tuple[str, int], tuple[float, int, float]] = {}
+        self._edge_prediction_cache: dict[tuple[str, int], tuple[float, int, float]] = (
+            {}
+        )
         self._edge_prediction_ttl_s: float = 300.0
 
         # Central route job store.
@@ -152,7 +154,11 @@ class TrafficJamService:
             alive = [task for task in self._worker_tasks if not task.done()]
             same_loop = self._worker_loop is loop
 
-            if same_loop and self._job_queue is not None and len(alive) >= self._worker_count:
+            if (
+                same_loop
+                and self._job_queue is not None
+                and len(alive) >= self._worker_count
+            ):
                 self._worker_tasks = alive[: self._worker_count]
                 return
 
@@ -374,7 +380,9 @@ class TrafficJamService:
                     job = self._route_predictions.get(route_id)
                     if job is not None:
                         job["status"] = "failed"
-                        job["retry_count"] = int(job.get("max_retries") or self._max_job_retries)
+                        job["retry_count"] = int(
+                            job.get("max_retries") or self._max_job_retries
+                        )
                         job["error"] = str(exc)
                         self._touch_job_locked(job)
         else:
@@ -384,7 +392,9 @@ class TrafficJamService:
 
         with self._state_lock:
             current = self._route_predictions.get(route_id, {})
-            public_status = self._to_public_status(str(current.get("status") or "pending"))
+            public_status = self._to_public_status(
+                str(current.get("status") or "pending")
+            )
             return {
                 "route_id": route_id,
                 "status": public_status,
@@ -515,7 +525,9 @@ class TrafficJamService:
                 for i, probs in enumerate(class_probs):
                     cache_key, jam_level = pending_meta[i]
                     prob_mod = float(probs[mod_idx]) if mod_idx is not None else 0.0
-                    prob_heavy = float(probs[heavy_idx]) if heavy_idx is not None else 0.0
+                    prob_heavy = (
+                        float(probs[heavy_idx]) if heavy_idx is not None else 0.0
+                    )
                     model_jam_prob = prob_mod + prob_heavy
 
                     level_factor = {1: 0.25, 2: 0.60, 3: 0.90}.get(jam_level, 0.50)
@@ -582,7 +594,9 @@ class TrafficJamService:
                         jam_label=label,
                     )
                 )
-                csv_rows.append([edge_id, road_type, round(length_m, 3), hour, level, label])
+                csv_rows.append(
+                    [edge_id, road_type, round(length_m, 3), hour, level, label]
+                )
 
         db.bulk_save_objects(rows)
         db.commit()
@@ -628,8 +642,16 @@ class TrafficJamService:
             [
                 df["hour_of_day"].astype(float).to_numpy(),
                 df["edge_id"].astype(str).map(self._edge_hash).astype(float).to_numpy(),
-                df["road_type"].astype(str).map(self._road_type_to_code).astype(float).to_numpy(),
-                df["length_m"].astype(float).map(self._length_bucket).astype(float).to_numpy(),
+                df["road_type"]
+                .astype(str)
+                .map(self._road_type_to_code)
+                .astype(float)
+                .to_numpy(),
+                df["length_m"]
+                .astype(float)
+                .map(self._length_bucket)
+                .astype(float)
+                .to_numpy(),
             ]
         )
         y = df["jam_level"].astype(int).to_numpy()
@@ -654,7 +676,9 @@ class TrafficJamService:
 
         df = pd.read_csv(csv_path, usecols=["edge_id", "hour_of_day", "jam_level"])
         for row in df.itertuples(index=False):
-            self._jam_lookup[(str(row.edge_id), int(row.hour_of_day))] = int(row.jam_level)
+            self._jam_lookup[(str(row.edge_id), int(row.hour_of_day))] = int(
+                row.jam_level
+            )
 
     def _road_type(self, edge_data: dict) -> str:
         road = edge_data.get("road_type") or edge_data.get("highway") or "unknown"
@@ -707,7 +731,16 @@ class TrafficJamService:
                 csv_path.parent.mkdir(parents=True, exist_ok=True)
                 with csv_path.open("w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
-                    writer.writerow(["edge_id", "road_type", "length_m", "hour_of_day", "jam_level", "jam_label"])
+                    writer.writerow(
+                        [
+                            "edge_id",
+                            "road_type",
+                            "length_m",
+                            "hour_of_day",
+                            "jam_level",
+                            "jam_label",
+                        ]
+                    )
                     writer.writerows(rows)
                 return csv_path
             except PermissionError:
