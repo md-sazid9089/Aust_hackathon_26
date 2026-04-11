@@ -48,7 +48,7 @@ function HomePage({ onNavigateToMap, apiStatus }) {
   ];
 
   return (
-    <div className="animate-fade-in" style={{ background: 'var(--bg-deep)', minHeight: '100%' }}>
+    <div className="animate-fade-in" style={{ background: 'var(--bg-deep)', width: '100%' }}>
 
       {/* ═══ Hero Section ══════════════════════════════════════ */}
       <section style={{

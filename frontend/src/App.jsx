@@ -15,6 +15,7 @@ import HomePage from './pages/HomePage';
 import MapPage from './pages/MapPage';
 import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
+import Footer from './components/Footer';
 import { checkHealth, initializeAuth } from './services/api';
 
 function App() {
@@ -233,7 +234,7 @@ function App() {
           - On home page: normal flow content with top padding for navbar
       ══════════════════════════════════════════════════ */}
       <main style={{
-        flex: 1, position: 'relative',
+        flex: 1, position: 'relative', display: 'flex', flexDirection: 'column',
         paddingTop: isMapPage || currentPage === 'login' || currentPage === 'signup' ? 0 : 76,   /* no padding for map, login, and signup pages */
       }}>
         {currentPage === 'home' ? (
@@ -249,10 +250,7 @@ function App() {
 
       {/* Footer — hidden on map and login pages */}
       {!isMapPage && currentPage !== 'login' && currentPage !== 'signup' && (
-        <footer className="app-footer">
-          <span>GoliTransit AI — Multi-Modal Hyper-Local Routing Engine</span>
-          <span style={{ color: 'rgba(255,255,255,0.12)' }}>v0.1.0-hackathon</span>
-        </footer>
+        <Footer />
       )}
     </div>
   );
