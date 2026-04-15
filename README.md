@@ -1195,9 +1195,10 @@ Aust_hackathon_26/
 
 ## 16. Live Deployments and Public Domains
 
-- Frontend (Vercel): https://aust-hackathon-26.vercel.app/
+- Frontend (Vercel): https://version2-flame.vercel.app/
 - Backend (Azure App Service): https://maploactor-eve5e0d5f5h0aqh8.southeastasia-01.azurewebsites.net/
-- Backend (Render): https://aust-hackathon-26.onrender.com/
+- Backend (Render): https://version2-62fe.onrender.com/
+- ml(render):https://version2-1-vkzu.onrender.com
 - Public live domain: https://www.smartcommutebd.live/
 - Backend is currently not working in deployment due to free tier limit
 Notes:
